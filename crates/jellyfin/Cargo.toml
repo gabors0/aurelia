@@ -1,0 +1,17 @@
+[package]
+name = "jellyfin"
+description = "Minimal typed async client for the Jellyfin API"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+wiremock = "0.6"
