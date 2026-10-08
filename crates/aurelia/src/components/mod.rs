@@ -13,3 +13,4 @@ pub mod pill;
 pub mod poster_card;
 pub mod progress;
 pub mod row;
+pub mod scroller;

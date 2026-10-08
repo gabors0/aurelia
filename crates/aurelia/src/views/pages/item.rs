@@ -625,20 +625,15 @@ impl Render for ItemPage {
             .size_full()
             .bg(Palette::bg())
             .child(
-                div()
-                    .id("item-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
-                    .child(
-                        v_flex()
-                            .child(hero)
-                            .child(crate::components::ambient::section(
-                                "item-ambient",
-                                ambient,
-                                below,
-                            )),
-                    ),
+                crate::components::scroller::page("item-scroll", &self.scroll).child(
+                    v_flex()
+                        .child(hero)
+                        .child(crate::components::ambient::section(
+                            "item-ambient",
+                            ambient,
+                            below,
+                        )),
+                ),
             )
             .vertical_scrollbar(&self.scroll)
             .into_any_element()

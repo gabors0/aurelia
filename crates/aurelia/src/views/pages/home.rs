@@ -495,11 +495,7 @@ impl Render for HomePage {
             .size_full()
             .bg(Palette::bg())
             .child(
-                div()
-                    .id("home-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
+                crate::components::scroller::page("home-scroll", &self.scroll)
                     .child(
                         div()
                             .flex()

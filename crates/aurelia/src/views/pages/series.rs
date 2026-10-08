@@ -661,16 +661,13 @@ impl Render for SeriesPage {
             .size_full()
             .bg(Palette::bg())
             .child(
-                div()
-                    .id("series-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.scroll)
-                    .child(v_flex().child(hero).child(ambient::section(
+                crate::components::scroller::page("series-scroll", &self.scroll).child(
+                    v_flex().child(hero).child(ambient::section(
                         "series-ambient",
                         ambient_request,
                         below,
-                    ))),
+                    )),
+                ),
             )
             .vertical_scrollbar(&self.scroll)
             .into_any_element()

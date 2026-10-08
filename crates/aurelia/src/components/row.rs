@@ -8,6 +8,7 @@ use gpui_kit::{
 };
 
 use crate::theme::{FONT_DISPLAY, Palette};
+use gpui_kit::TestSupportExt as _;
 
 pub const ROW_PADDING: Pixels = px(48.);
 
@@ -95,8 +96,12 @@ pub fn row(
                         .pt_1()
                         .pb_3()
                         .overflow_x_scroll()
+                        // Without this GPUI turns vertical wheel motion into
+                        // sideways scrolling here, hijacking page scrolls.
+                        .restrict_scroll_to_axis()
                         .track_scroll(handle)
-                        .children(cards),
+                        .children(cards)
+                        .test_support(),
                 )
                 .when(can_left, |this| {
                     this.child(arrow(
@@ -147,4 +152,90 @@ pub fn skeleton_row(width: Pixels, height: Pixels) -> impl IntoElement {
                         .bg(Palette::glass())
                 })),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        AppContext as _, Bounds, Context, IntoElement, ParentElement as _, Render, ScrollDelta,
+        ScrollHandle, Styled as _, TestAppContext, TestSupportExt as _, Window, WindowBounds,
+        WindowOptions, div, point, px, size,
+    };
+
+    use super::row;
+    use crate::components::scroller::page;
+
+    /// A page with a tall header and one shelf of cards wider than the window.
+    struct Fixture {
+        page: ScrollHandle,
+        shelf: ScrollHandle,
+    }
+
+    impl Render for Fixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let cards = (0..12)
+                .map(|_| {
+                    div()
+                        .w(px(200.))
+                        .h(px(120.))
+                        .flex_shrink_0()
+                        .into_any_element()
+                })
+                .collect();
+            page("page", &self.page)
+                .child(div().h(px(400.)))
+                .child(row("shelf", "Shelf", &self.shelf, cards))
+                .child(div().h(px(800.)))
+                .test_support()
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (gpui_kit::AnyWindowHandle, ScrollHandle, ScrollHandle) {
+        cx.update(gpui_kit::init);
+        let page = ScrollHandle::new();
+        let shelf = ScrollHandle::new();
+        let (handle, _) = cx.update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(800.), px(600.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|_| Fixture {
+                        page: page.clone(),
+                        shelf: shelf.clone(),
+                    })
+                },
+            )
+            .expect("open test window")
+        });
+        (handle, page, shelf)
+    }
+
+    #[gpui_kit::test]
+    fn vertical_wheel_over_a_shelf_scrolls_only_the_page(cx: &mut TestAppContext) {
+        let (window, page, shelf) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            window.scroll("shelf", ScrollDelta::Pixels(point(px(0.), px(-120.))), cx);
+        })
+        .unwrap();
+        assert_eq!(shelf.offset().x, px(0.), "shelf must not move sideways");
+        assert!(page.offset().y < px(0.), "page scrolls down");
+    }
+
+    #[gpui_kit::test]
+    fn horizontal_wheel_over_a_shelf_scrolls_only_the_shelf(cx: &mut TestAppContext) {
+        let (window, page, shelf) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            window.scroll("shelf", ScrollDelta::Pixels(point(px(-120.), px(0.))), cx);
+        })
+        .unwrap();
+        assert!(shelf.offset().x < px(0.), "shelf scrolls sideways");
+        assert_eq!(page.offset().y, px(0.), "page must not move vertically");
+    }
 }
