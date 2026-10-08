@@ -4,8 +4,39 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
     Home,
-    Library { id: String, name: String },
-    Item { id: String },
+    Library {
+        id: String,
+        name: String,
+    },
+    /// A movie or episode.
+    Item {
+        id: String,
+    },
+    /// A show, optionally opened at a season.
+    Series {
+        id: String,
+        season_id: Option<String>,
+    },
+}
+
+impl Route {
+    /// Where clicking an item card leads.
+    pub fn for_item(item: &jellyfin::BaseItem) -> Self {
+        use jellyfin::ItemKind;
+        match item.kind {
+            ItemKind::Series => Route::Series {
+                id: item.id.clone(),
+                season_id: None,
+            },
+            ItemKind::Season => Route::Series {
+                id: item.series_id.clone().unwrap_or_else(|| item.id.clone()),
+                season_id: Some(item.id.clone()),
+            },
+            _ => Route::Item {
+                id: item.id.clone(),
+            },
+        }
+    }
 }
 
 const MAX_HISTORY: usize = 24;
@@ -121,6 +152,26 @@ mod tests {
         assert!(!nav.push(Route::Home, 9));
         assert_eq!(*nav.page(), 0);
         assert!(!nav.can_go_back());
+    }
+
+    #[test]
+    fn season_routes_to_its_series() {
+        let season: jellyfin::BaseItem = serde_json::from_value(serde_json::json!({
+            "Id": "s1", "Name": "Season 1", "Type": "Season", "SeriesId": "show"
+        }))
+        .unwrap();
+        assert_eq!(
+            Route::for_item(&season),
+            Route::Series {
+                id: "show".into(),
+                season_id: Some("s1".into())
+            }
+        );
+        let movie: jellyfin::BaseItem = serde_json::from_value(serde_json::json!({
+            "Id": "m", "Name": "M", "Type": "Movie"
+        }))
+        .unwrap();
+        assert_eq!(Route::for_item(&movie), Route::Item { id: "m".into() });
     }
 
     #[test]

@@ -21,6 +21,7 @@ fn main() {
             runtime::init(cx);
             state::AppState::init(cx);
             images::ImageStore::init(cx);
+            views::shell::bind_keys(cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),

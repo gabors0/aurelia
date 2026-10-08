@@ -1,0 +1,52 @@
+//! The pages the shell navigates between.
+
+pub mod home;
+pub mod item;
+pub mod library;
+pub mod series;
+
+use gpui_kit::{AnyView, App, AppContext as _, Entity, Window};
+
+use self::home::HomePage;
+use self::item::ItemPage;
+use self::library::LibraryPage;
+use self::series::SeriesPage;
+use crate::nav::Route;
+
+#[derive(Clone)]
+pub enum Page {
+    Home(Entity<HomePage>),
+    Library(Entity<LibraryPage>),
+    Item(Entity<ItemPage>),
+    Series(Entity<SeriesPage>),
+}
+
+impl Page {
+    pub fn for_route(route: &Route, window: &mut Window, cx: &mut App) -> Self {
+        match route {
+            Route::Home => Page::Home(cx.new(|cx| HomePage::new(window, cx))),
+            Route::Library { .. } => Page::Library(cx.new(|cx| LibraryPage::new(window, cx))),
+            Route::Item { .. } => Page::Item(cx.new(|cx| ItemPage::new(window, cx))),
+            Route::Series { .. } => Page::Series(cx.new(|cx| SeriesPage::new(window, cx))),
+        }
+    }
+
+    pub fn view(&self) -> AnyView {
+        match self {
+            Page::Home(page) => page.clone().into(),
+            Page::Library(page) => page.clone().into(),
+            Page::Item(page) => page.clone().into(),
+            Page::Series(page) => page.clone().into(),
+        }
+    }
+
+    /// Reloads server data (after playback, or on Ctrl+R).
+    pub fn refresh(&self, window: &mut Window, cx: &mut App) {
+        match self {
+            Page::Home(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
+            Page::Library(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
+            Page::Item(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
+            Page::Series(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
+        }
+    }
+}
