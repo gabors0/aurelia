@@ -1,0 +1,13 @@
+[package]
+name = "player"
+description = "Media player abstraction with an mpv (JSON IPC) backend"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-channel.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
