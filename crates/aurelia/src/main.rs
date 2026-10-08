@@ -3,6 +3,7 @@ mod format;
 mod images;
 mod loadable;
 mod nav;
+mod playback;
 mod runtime;
 mod session;
 mod state;

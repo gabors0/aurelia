@@ -40,6 +40,14 @@ impl Page {
         }
     }
 
+    /// How far the page is scrolled (0 at the top, negative further down).
+    pub fn scroll_offset(&self, cx: &App) -> gpui_kit::Pixels {
+        match self {
+            Page::Home(page) => page.read(cx).scroll_handle().offset().y,
+            _ => gpui_kit::px(0.),
+        }
+    }
+
     /// Reloads server data (after playback, or on Ctrl+R).
     pub fn refresh(&self, window: &mut Window, cx: &mut App) {
         match self {

@@ -20,6 +20,7 @@ pub struct Art {
     /// Shown large on the gradient when there's no artwork at all.
     title: Option<SharedString>,
     radius: Pixels,
+    bare: bool,
     style: StyleRefinement,
 }
 
@@ -31,6 +32,7 @@ impl Art {
             fit: ObjectFit::Cover,
             title: None,
             radius: px(0.),
+            bare: false,
             style: StyleRefinement::default(),
         }
     }
@@ -44,6 +46,12 @@ impl Art {
 
     pub fn fit(mut self, fit: ObjectFit) -> Self {
         self.fit = fit;
+        self
+    }
+
+    /// No surface colour or placeholder: for logos and overlays.
+    pub fn bare(mut self) -> Self {
+        self.bare = true;
         self
     }
 
@@ -77,7 +85,7 @@ impl RenderOnce for Art {
             .id(self.id.clone())
             .relative()
             .overflow_hidden()
-            .bg(Palette::surface())
+            .when(!self.bare, |this| this.bg(Palette::surface()))
             .rounded(self.radius)
             .refine_style(&self.style);
         let radius = self.radius;
@@ -112,21 +120,22 @@ impl RenderOnce for Art {
                 .into_any_element(),
         };
 
-        base.child(backdrop).when_some(ready, |this, image| {
-            this.child(
-                img(ImageSource::Render(image))
-                    .absolute()
-                    .inset_0()
-                    .size_full()
-                    .rounded(radius)
-                    .object_fit(self.fit)
-                    .with_animation(
-                        ElementId::NamedChild(std::sync::Arc::new(self.id), "fade".into()),
-                        Animation::new(Duration::from_millis(260))
-                            .with_easing(gpui_kit::ease_in_out),
-                        |image, t| image.opacity(t),
-                    ),
-            )
-        })
+        base.when(!self.bare, |this| this.child(backdrop))
+            .when_some(ready, |this, image| {
+                this.child(
+                    img(ImageSource::Render(image))
+                        .absolute()
+                        .inset_0()
+                        .size_full()
+                        .rounded(radius)
+                        .object_fit(self.fit)
+                        .with_animation(
+                            ElementId::NamedChild(std::sync::Arc::new(self.id), "fade".into()),
+                            Animation::new(Duration::from_millis(260))
+                                .with_easing(gpui_kit::ease_in_out),
+                            |image, t| image.opacity(t),
+                        ),
+                )
+            })
     }
 }

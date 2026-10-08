@@ -226,6 +226,7 @@ impl Shell {
             .unwrap_or_default()
             .into();
         let can_go_back = self.nav.can_go_back();
+        let scrolled = self.nav.page().scroll_offset(cx) < px(-24.);
         let _ = window;
 
         let mut tabs = h_flex().gap_1().child(self.render_tab(
@@ -252,12 +253,19 @@ impl Shell {
             .top_0()
             .left_0()
             .right_0()
-            .h(NAV_HEIGHT + px(24.))
-            .bg(linear_gradient(
-                180.,
-                linear_color_stop(rgba(0x0A0B10E6), 0.),
-                linear_color_stop(rgba(0x0A0B1000), 1.),
-            ))
+            .when(!scrolled, |this| {
+                this.h(NAV_HEIGHT + px(24.)).bg(linear_gradient(
+                    180.,
+                    linear_color_stop(rgba(0x0A0B10E6), 0.),
+                    linear_color_stop(rgba(0x0A0B1000), 1.),
+                ))
+            })
+            .when(scrolled, |this| {
+                this.h(NAV_HEIGHT)
+                    .bg(rgba(0x0C0D13F7))
+                    .border_b_1()
+                    .border_color(Palette::border())
+            })
             .child(
                 TitleBar::new().h(NAV_HEIGHT).pl_5().child(
                     h_flex()
