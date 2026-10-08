@@ -7,6 +7,7 @@ pub mod glass;
 pub mod hero;
 pub mod logo;
 pub mod meta;
+pub mod pill;
 pub mod poster_card;
 pub mod progress;
 pub mod row;

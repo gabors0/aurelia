@@ -1,5 +1,6 @@
 //! The pages the shell navigates between.
 
+pub mod grid;
 pub mod home;
 pub mod item;
 pub mod library;
@@ -25,7 +26,9 @@ impl Page {
     pub fn for_route(route: &Route, window: &mut Window, cx: &mut App) -> Self {
         match route {
             Route::Home => Page::Home(cx.new(|cx| HomePage::new(window, cx))),
-            Route::Library { .. } => Page::Library(cx.new(|cx| LibraryPage::new(window, cx))),
+            Route::Library { id, name } => {
+                Page::Library(cx.new(|cx| LibraryPage::new(id.clone(), name.clone(), window, cx)))
+            }
             Route::Item { .. } => Page::Item(cx.new(|cx| ItemPage::new(window, cx))),
             Route::Series { .. } => Page::Series(cx.new(|cx| SeriesPage::new(window, cx))),
         }
