@@ -30,7 +30,9 @@ impl Page {
                 Page::Library(cx.new(|cx| LibraryPage::new(id.clone(), name.clone(), window, cx)))
             }
             Route::Item { id } => Page::Item(cx.new(|cx| ItemPage::new(id.clone(), window, cx))),
-            Route::Series { .. } => Page::Series(cx.new(|cx| SeriesPage::new(window, cx))),
+            Route::Series { id, season_id } => Page::Series(
+                cx.new(|cx| SeriesPage::new(id.clone(), season_id.clone(), window, cx)),
+            ),
         }
     }
 
@@ -48,14 +50,17 @@ impl Page {
         match self {
             Page::Home(page) => page.read(cx).scroll_handle().offset().y,
             Page::Item(page) => page.read(cx).scroll_handle().offset().y,
+            Page::Series(page) => page.read(cx).scroll_handle().offset().y,
             _ => gpui_kit::px(0.),
         }
     }
 
     /// Enter on a page: play what it shows.
     pub fn primary_action(&self, window: &mut Window, cx: &mut App) {
-        if let Page::Item(page) = self {
-            page.update(cx, |page, cx| page.play(false, window, cx));
+        match self {
+            Page::Item(page) => page.update(cx, |page, cx| page.play(false, window, cx)),
+            Page::Series(page) => page.update(cx, |page, cx| page.play(window, cx)),
+            _ => {}
         }
     }
 

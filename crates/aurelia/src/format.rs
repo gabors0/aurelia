@@ -55,6 +55,12 @@ pub fn years(start: Option<i32>, end_date: Option<&str>, continuing: bool) -> St
     }
 }
 
+/// "Mar 3, 2022" from a Jellyfin timestamp.
+pub fn date(timestamp: &str) -> Option<String> {
+    let day = chrono::NaiveDate::parse_from_str(timestamp.get(..10)?, "%Y-%m-%d").ok()?;
+    Some(day.format("%b %-d, %Y").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +93,19 @@ mod tests {
         assert_eq!(episode_label(Some(2), Some(3)), "S2:E3");
         assert_eq!(episode_label(None, Some(3)), "E3");
         assert_eq!(episode_label(Some(1), None), "");
+    }
+
+    #[test]
+    fn format_date() {
+        assert_eq!(
+            date("2022-03-03T00:00:00.0000000Z").as_deref(),
+            Some("Mar 3, 2022")
+        );
+        assert_eq!(
+            date("2010-12-25T00:00:00Z").as_deref(),
+            Some("Dec 25, 2010")
+        );
+        assert_eq!(date("garbage"), None);
     }
 
     #[test]

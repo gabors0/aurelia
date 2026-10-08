@@ -93,6 +93,7 @@ impl ItemPage {
                     Ok((item, related)) => {
                         this.item = Loadable::Ready(item);
                         this.related = Loadable::Ready(related);
+                        crate::dev::apply_initial_scroll(&this.scroll);
                         if dev_autoplay() {
                             this.play_when_ready = true;
                         }
@@ -471,68 +472,8 @@ impl ItemPage {
     }
 
     fn render_cast(&mut self, item: &BaseItem, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let client = AppState::client(cx);
-        let cast: Vec<&Person> = item
-            .people
-            .iter()
-            .filter(|p| matches!(p.person_type.as_deref(), Some("Actor" | "GuestStar")))
-            .take(24)
-            .collect();
-        if cast.is_empty() {
-            return None;
-        }
-        let blurhashes = item.image_blur_hashes.get("Primary");
-        let cards = cast
-            .into_iter()
-            .map(|person| {
-                let request = person.primary_image_tag.as_ref().map(|tag| {
-                    let mut request = ImageRequest::new(
-                        client.person_image_url(&person.id, tag, 240).to_string(),
-                    );
-                    if let Some(hash) = blurhashes.and_then(|b| b.get(tag)) {
-                        request = request.with_blurhash(hash.clone());
-                    }
-                    request
-                });
-                v_flex()
-                    .w(px(112.))
-                    .flex_shrink_0()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        Art::new(SharedString::from(format!("person-{}", person.id)), request)
-                            .title(initials(&person.name))
-                            .radius(px(56.))
-                            .size(px(104.)),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .text_center()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate()
-                            .child(person.name.clone()),
-                    )
-                    .when_some(
-                        person.role.clone().filter(|r| !r.is_empty()),
-                        |this, role| {
-                            this.child(
-                                div()
-                                    .w_full()
-                                    .text_center()
-                                    .text_xs()
-                                    .truncate()
-                                    .text_color(Palette::text_tertiary())
-                                    .child(role),
-                            )
-                        },
-                    )
-                    .into_any_element()
-            })
-            .collect();
         let handle = self.row_handle("cast");
-        Some(row("cast", "Cast", &handle, cards).into_any_element())
+        crate::components::cast::cast_row(item, &handle, cx)
     }
 
     fn render_related(&mut self, item: &BaseItem, accent: Hsla) -> Option<AnyElement> {
@@ -569,13 +510,6 @@ impl ItemPage {
         let handle = self.row_handle("related");
         Some(row("related", title, &handle, cards).into_any_element())
     }
-}
-
-fn initials(name: &str) -> String {
-    name.split_whitespace()
-        .filter_map(|word| word.chars().next())
-        .take(2)
-        .collect()
 }
 
 /// A labelled dropdown of tracks.

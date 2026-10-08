@@ -271,7 +271,7 @@ impl Shell {
             })
             .when(scrolled, |this| {
                 this.h(NAV_HEIGHT)
-                    .bg(rgba(0x0C0D13F7))
+                    .bg(rgba(0x0C0D13FF))
                     .border_b_1()
                     .border_color(Palette::border())
             })
