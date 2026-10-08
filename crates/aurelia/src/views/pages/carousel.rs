@@ -35,10 +35,6 @@ impl Carousel {
         self.previous
     }
 
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
     /// New slides arrived; keep showing `keep` if it's still among them.
     pub fn reset(&mut self, len: usize, keep: Option<usize>, now: Instant) {
         self.len = len;
