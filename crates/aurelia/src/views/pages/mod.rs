@@ -72,7 +72,16 @@ impl Page {
         }
     }
 
-    /// Reloads server data (after playback, or on Ctrl+R).
+    /// The refresh button and Ctrl+R: reloads, and Home picks new random
+    /// hero slides.
+    pub fn reshuffle(&self, window: &mut Window, cx: &mut App) {
+        match self {
+            Page::Home(page) => page.update(cx, |page, cx| page.reshuffle(window, cx)),
+            _ => self.refresh(window, cx),
+        }
+    }
+
+    /// Reloads server data (after playback, coming back to the window).
     pub fn refresh(&self, window: &mut Window, cx: &mut App) {
         match self {
             Page::Home(page) => page.update(cx, |page, cx| page.refresh(window, cx)),

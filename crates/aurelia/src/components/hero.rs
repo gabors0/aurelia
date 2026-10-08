@@ -51,6 +51,11 @@ pub fn backdrop(id: impl Into<ElementId>, request: Option<ImageRequest>) -> impl
         )
 }
 
+pub fn logo_request(client: &Client, item: &BaseItem) -> Option<ImageRequest> {
+    item.logo_image()
+        .map(|logo| ImageRequest::for_image(client, &logo, 800))
+}
+
 /// A title logo sized to its own aspect ratio and pinned left.
 #[derive(IntoElement)]
 struct Logo {
@@ -113,10 +118,10 @@ pub fn title(
         (Some(series), jellyfin::ItemKind::Episode) => series.clone(),
         _ => item.name.clone(),
     };
-    match item.logo_image() {
-        Some(logo) => Logo {
+    match logo_request(client, item) {
+        Some(request) => Logo {
             id: id.into(),
-            request: ImageRequest::for_image(client, &logo, 800),
+            request,
             max_height,
             fallback: name.into(),
         }

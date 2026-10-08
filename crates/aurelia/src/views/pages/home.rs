@@ -13,9 +13,9 @@ use gpui_kit::{
     Animation, AnimationExt as _, AnyElement, Context, ElementId, FontWeight, Hsla, ScrollHandle,
     SharedString, Task, Window, div, hsla, px, rgba,
 };
-use jellyfin::{BaseItem, ItemKind, UserView};
+use jellyfin::{BaseItem, ItemKind, ItemsQuery, SortBy, UserView};
 
-use super::carousel::Carousel;
+use super::carousel::{self, Carousel};
 use crate::components::button::{glass_button, play_button};
 use crate::components::hero;
 use crate::components::meta;
@@ -29,14 +29,22 @@ use crate::state::AppState;
 use crate::theme::Palette;
 use crate::views::shell::{self, NAV_HEIGHT};
 
-const HERO_SLIDES: usize = 5;
+const HERO_RESUME: usize = 2;
+const HERO_RANDOM: usize = 4;
+/// Random candidates fetched so enough of them have backdrop art.
+const HERO_RANDOM_POOL: u32 = 30;
 const HERO_HEIGHT: f32 = 0.72;
 
 pub struct HomePage {
     resume: Loadable<Vec<BaseItem>>,
     next_up: Loadable<Vec<BaseItem>>,
     latest: Vec<(UserView, Loadable<Vec<BaseItem>>)>,
+    /// Random movies and shows for the hero; kept across refreshes so slides
+    /// don't change under the user, re-rolled by the refresh button.
+    random: Vec<BaseItem>,
     hero: Vec<BaseItem>,
+    /// How many of the first hero slides come from Continue Watching.
+    hero_resume: usize,
     carousel: Carousel,
     scroll: ScrollHandle,
     rows: HashMap<SharedString, ScrollHandle>,
@@ -52,7 +60,8 @@ impl HomePage {
                     .timer(Duration::from_millis(500))
                     .await;
                 let Ok(()) = this.update(cx, |this, cx| {
-                    if this.carousel.tick(Instant::now()) {
+                    let now = Instant::now();
+                    if this.carousel.tick(now) | this.carousel.settle(now) {
                         cx.notify();
                     }
                 }) else {
@@ -64,7 +73,9 @@ impl HomePage {
             resume: Loadable::Loading,
             next_up: Loadable::Loading,
             latest: Vec::new(),
+            random: Vec::new(),
             hero: Vec::new(),
+            hero_resume: 0,
             carousel: Carousel::new(Instant::now()),
             scroll: ScrollHandle::new(),
             rows: HashMap::new(),
@@ -75,7 +86,17 @@ impl HomePage {
         this
     }
 
+    /// Reloads server data (after playback, coming back to the window).
     pub fn refresh(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.load(false, cx);
+    }
+
+    /// The refresh button: reloads and picks new random hero slides.
+    pub fn reshuffle(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.load(true, cx);
+    }
+
+    fn load(&mut self, reshuffle: bool, cx: &mut Context<Self>) {
         let client = AppState::client(cx);
         let views: Vec<UserView> = AppState::global(cx)
             .views()
@@ -94,6 +115,18 @@ impl HomePage {
         let resume = runtime::api(cx, async move { c.resume_items(16).await });
         let c = client.clone();
         let next_up = runtime::api(cx, async move { c.next_up(None, 16, false).await });
+        let c = client.clone();
+        let random = (reshuffle || self.random.is_empty()).then(|| {
+            runtime::api(cx, async move {
+                c.items(&ItemsQuery {
+                    include_item_types: vec![ItemKind::Movie, ItemKind::Series],
+                    sort_by: SortBy::Random,
+                    limit: HERO_RANDOM_POOL,
+                    ..ItemsQuery::default()
+                })
+                .await
+            })
+        });
         let latest: Vec<_> = views
             .iter()
             .map(|view| {
@@ -106,6 +139,11 @@ impl HomePage {
         self._load = Some(cx.spawn(async move |this, cx| {
             let resume = resume.await;
             let next_up = next_up.await;
+            // Only decoration: if it fails, keep the slides we have.
+            let random = match random {
+                Some(fetch) => fetch.await.ok().map(|page| page.items),
+                None => None,
+            };
             let mut latest_results = Vec::new();
             for fetch in latest {
                 latest_results.push(fetch.await);
@@ -124,7 +162,11 @@ impl HomePage {
                     .zip(latest_results)
                     .map(|(view, result)| (view, loadable(result)))
                     .collect();
-                this.rebuild_hero();
+                let reshuffled = random.is_some();
+                if let Some(random) = random {
+                    this.random = random;
+                }
+                this.rebuild_hero(reshuffle && reshuffled);
                 if let Some(y) = std::env::var("AURELIA_SCROLL_Y")
                     .ok()
                     .and_then(|v| v.parse::<f32>().ok())
@@ -137,31 +179,24 @@ impl HomePage {
         }));
     }
 
-    /// Hero picks: what you're in the middle of, then the newest arrivals —
-    /// only items with backdrop art, one per show.
-    fn rebuild_hero(&mut self) {
+    /// Hero picks: what you're in the middle of, then random movies and shows
+    /// from the whole library — only items with backdrop art, one per show.
+    /// `reshuffled` shows the first new random slide; otherwise the slide on
+    /// screen stays put.
+    fn rebuild_hero(&mut self, reshuffled: bool) {
         let current = self.hero.get(self.carousel.index()).map(|i| i.id.clone());
         let mut picks: Vec<BaseItem> = Vec::new();
         let mut seen_series = Vec::new();
-        let resume = self.resume.ready().into_iter().flatten().take(2);
-        let latest = self
-            .latest
-            .iter()
-            .filter_map(|(_, items)| items.ready())
-            .flat_map(|items| items.iter().take(4));
-        for item in resume.chain(latest) {
-            if picks.len() == HERO_SLIDES || item.backdrop_image().is_none() {
-                continue;
-            }
-            let key = item.series_id.clone().unwrap_or_else(|| item.id.clone());
-            if seen_series.contains(&key) {
-                continue;
-            }
-            seen_series.push(key);
-            picks.push(item.clone());
+        let resume = self.resume.ready().map(Vec::as_slice).unwrap_or_default();
+        self.hero_resume = pick(&mut picks, &mut seen_series, resume, HERO_RESUME);
+        pick(&mut picks, &mut seen_series, &self.random, HERO_RANDOM);
+        let now = Instant::now();
+        if reshuffled && picks.len() > self.hero_resume {
+            self.carousel.restart(picks.len(), self.hero_resume, now);
+        } else {
+            let keep = current.and_then(|id| picks.iter().position(|i| i.id == id));
+            self.carousel.reset(picks.len(), keep, now);
         }
-        let keep = current.and_then(|id| picks.iter().position(|i| i.id == id));
-        self.carousel.reset(picks.len(), keep, Instant::now());
         self.hero = picks;
     }
 
@@ -207,15 +242,34 @@ impl HomePage {
             .unwrap_or_else(|| Palette::accent().into())
     }
 
+    /// One hero slide. Its fade is keyed by `serial` (one per showing) and its
+    /// elements by the item, so a slide keeps its state while it's on screen —
+    /// as the current slide and then under the next one — and fades in afresh
+    /// each time it comes back.
+    /// Starts loading every slide's artwork so slides don't fade in empty.
+    fn prefetch_hero(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let client = AppState::client(cx);
+        for item in &self.hero {
+            if let Some(request) = hero::backdrop_request(&client, item) {
+                ImageStore::get(&request, window, cx);
+                ImageStore::get(&ambient(&request), window, cx);
+            }
+            if let Some(request) = hero::logo_request(&client, item) {
+                ImageStore::get(&request, window, cx);
+            }
+        }
+    }
+
     fn render_slide(
         &self,
         index: usize,
-        fade_in: bool,
+        serial: u64,
         accent: Hsla,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let client = AppState::client(cx);
         let item = &self.hero[index];
+        let from_resume = index < self.hero_resume;
         let request = hero::backdrop_request(&client, item);
         let resume = item.resume_position().is_some();
         let label: SharedString = match (item.kind, resume) {
@@ -253,13 +307,14 @@ impl HomePage {
             _ => item.taglines.first().cloned(),
         };
 
-        let slide = div()
+        div()
+            .id(SharedString::from(item.id.clone()))
             .absolute()
             .inset_0()
-            .child(hero::backdrop(("hero-art", index), request))
+            .child(hero::backdrop("hero-art", request))
             .child(
                 div()
-                    .id(("hero-content", index))
+                    .id("hero-content")
                     .on_hover(cx.listener(|this, hovered: &bool, _, _| this.pause_hero(*hovered)))
                     .absolute()
                     .left(ROW_PADDING)
@@ -268,7 +323,16 @@ impl HomePage {
                     .flex()
                     .flex_col()
                     .gap_4()
-                    .child(hero::title(&client, item, ("hero-logo", index), px(140.)))
+                    .when(from_resume, |this| {
+                        this.child(
+                            div()
+                                .text_size(px(13.))
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(accent)
+                                .child("CONTINUE WATCHING"),
+                        )
+                    })
+                    .child(hero::title(&client, item, "hero-logo", px(140.)))
                     .when_some(subtitle, |this, subtitle| {
                         this.child(
                             div()
@@ -293,35 +357,25 @@ impl HomePage {
                             .flex()
                             .gap_3()
                             .mt_2()
-                            .child(play_button(("hero-play", index), label, accent).on_click(
+                            .child(play_button("hero-play", label, accent).on_click(
                                 move |_, window, cx| {
                                     crate::playback::play_item(&play_item, false, window, cx)
                                 },
                             ))
                             .child(
-                                glass_button(
-                                    ("hero-info", index),
-                                    Some(IconName::Info),
-                                    "More info",
-                                )
-                                .on_click(move |_, window, cx| {
-                                    shell::navigate(info_route.clone(), window, cx)
-                                }),
+                                glass_button("hero-info", Some(IconName::Info), "More info")
+                                    .on_click(move |_, window, cx| {
+                                        shell::navigate(info_route.clone(), window, cx)
+                                    }),
                             ),
                     ),
-            );
-
-        if fade_in {
-            slide
-                .with_animation(
-                    ElementId::NamedInteger("hero-fade".into(), index as u64),
-                    Animation::new(Duration::from_millis(700)).with_easing(gpui_kit::ease_in_out),
-                    |slide, t| slide.opacity(t),
-                )
-                .into_any_element()
-        } else {
-            slide.into_any_element()
-        }
+            )
+            .with_animation(
+                ElementId::NamedInteger("hero-fade".into(), serial),
+                Animation::new(carousel::FADE).with_easing(gpui_kit::ease_in_out),
+                |slide, t| slide.opacity(t),
+            )
+            .into_any_element()
     }
 
     fn render_hero(
@@ -339,10 +393,10 @@ impl HomePage {
             .h(height)
             .flex_shrink_0()
             .when_some(self.carousel.previous(), |this, previous| {
-                this.child(self.render_slide(previous, false, accent, cx))
+                this.child(self.render_slide(previous, self.carousel.previous_serial(), accent, cx))
             })
             .when(count > 0, |this| {
-                this.child(self.render_slide(current, true, accent, cx))
+                this.child(self.render_slide(current, self.carousel.serial(), accent, cx))
             })
             .when(count > 1, |this| {
                 this.child(
@@ -505,6 +559,31 @@ fn hero_arrow(id: &'static str, icon: IconName) -> gpui_kit::Stateful<gpui_kit::
         )
 }
 
+/// Adds up to `max` of `items` to the hero picks; returns how many it added.
+fn pick(
+    picks: &mut Vec<BaseItem>,
+    seen_series: &mut Vec<String>,
+    items: &[BaseItem],
+    max: usize,
+) -> usize {
+    let start = picks.len();
+    for item in items {
+        if picks.len() - start == max {
+            break;
+        }
+        if item.backdrop_image().is_none() {
+            continue;
+        }
+        let key = item.series_id.clone().unwrap_or_else(|| item.id.clone());
+        if seen_series.contains(&key) {
+            continue;
+        }
+        seen_series.push(key);
+        picks.push(item.clone());
+    }
+    picks.len() - start
+}
+
 fn loadable(result: jellyfin::Result<Vec<BaseItem>>) -> Loadable<Vec<BaseItem>> {
     Loadable::from_result(result)
 }
@@ -519,11 +598,22 @@ impl Render for HomePage {
         let viewport = window.viewport_size();
         let hero_height = (viewport.height * HERO_HEIGHT).clamp(px(520.), px(820.));
         let client = AppState::client(cx);
-        let ambient_request = self
-            .hero
-            .get(self.carousel.index())
-            .and_then(|item| hero::backdrop_request(&client, item))
-            .map(|request| ambient(&request));
+        // The outgoing slide's light stays under the incoming one's while it
+        // fades in.
+        let ambient_layers: Vec<_> = self
+            .carousel
+            .previous()
+            .into_iter()
+            .chain(Some(self.carousel.index()))
+            .filter_map(|index| self.hero.get(index))
+            .map(|item| {
+                (
+                    ElementId::Name(format!("ambient-{}", item.id).into()),
+                    hero::backdrop_request(&client, item).map(|request| ambient(&request)),
+                )
+            })
+            .collect();
+        self.prefetch_hero(window, cx);
         let rows = self.render_rows(accent);
         let error = self.render_error(cx);
         let empty =
@@ -545,9 +635,8 @@ impl Render for HomePage {
                                 this.child(self.render_hero(hero_height, accent, cx))
                             })
                             .child(
-                                crate::components::ambient::section(
-                                    ("ambient", self.carousel.index()),
-                                    ambient_request,
+                                crate::components::ambient::layered(
+                                    ambient_layers,
                                     vec![
                                         div()
                                             .flex()

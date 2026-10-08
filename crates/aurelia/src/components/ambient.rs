@@ -14,13 +14,24 @@ pub fn section(
     request: Option<ImageRequest>,
     content: Vec<AnyElement>,
 ) -> Div {
+    layered(vec![(id.into(), request)], content)
+}
+
+/// A section lit by several stacked artworks, bottom first: Home keeps the
+/// outgoing slide's light under the incoming one so the change crossfades.
+pub fn layered(layers: Vec<(ElementId, Option<ImageRequest>)>, content: Vec<AnyElement>) -> Div {
     div()
         .relative()
         .child(
             div()
                 .absolute()
                 .inset_0()
-                .child(Art::new(id, request).bare().size_full().opacity(0.8))
+                .children(layers.into_iter().map(|(id, request)| {
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .child(Art::new(id, request).bare().size_full().opacity(0.8))
+                }))
                 .child(div().absolute().inset_0().bg(rgba(0x0A0B1080)))
                 .child(
                     div()

@@ -1,9 +1,17 @@
 //! Slide state for Home's hero: which slide shows, when to advance, and the
 //! slide being faded out. Clock-driven so the timing rules are testable.
+//!
+//! Every showing of a slide gets a new serial. Home keys each slide's fade by
+//! it, so the outgoing slide keeps its finished fade (instead of restarting
+//! from transparent) and a slide that comes back fades in again.
 
 use std::time::{Duration, Instant};
 
 pub const INTERVAL: Duration = Duration::from_secs(8);
+/// How long the incoming slide takes to cover the outgoing one.
+pub const FADE: Duration = Duration::from_millis(700);
+/// The outgoing slide stays under the incoming one a little past the fade.
+const SETTLE: Duration = Duration::from_millis(1000);
 /// After the pointer leaves the controls, wait at least this long.
 const RESUME_GRACE: Duration = Duration::from_secs(3);
 
@@ -12,6 +20,8 @@ pub struct Carousel {
     len: usize,
     index: usize,
     previous: Option<usize>,
+    serial: u64,
+    previous_serial: u64,
     shown_at: Instant,
     paused: bool,
 }
@@ -22,6 +32,8 @@ impl Carousel {
             len: 0,
             index: 0,
             previous: None,
+            serial: 0,
+            previous_serial: 0,
             shown_at: now,
             paused: false,
         }
@@ -35,12 +47,34 @@ impl Carousel {
         self.previous
     }
 
-    /// New slides arrived; keep showing `keep` if it's still among them.
+    /// Serial of the current slide's showing.
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn previous_serial(&self) -> u64 {
+        self.previous_serial
+    }
+
+    /// New slides arrived; keep showing `keep` (the slide on screen, at its
+    /// new position) if it's still among them, without fading it in again.
     pub fn reset(&mut self, len: usize, keep: Option<usize>, now: Instant) {
+        match keep.filter(|i| *i < len) {
+            Some(index) => self.index = index,
+            None => {
+                self.index = 0;
+                self.serial += 1;
+            }
+        }
         self.len = len;
-        self.index = keep.filter(|i| *i < len).unwrap_or(0);
         self.previous = None;
         self.shown_at = now;
+    }
+
+    /// New slides arrived; show `index` freshly.
+    pub fn restart(&mut self, len: usize, index: usize, now: Instant) {
+        self.reset(len, None, now);
+        self.index = if index < len { index } else { 0 };
     }
 
     /// Arrow buttons and keys: wraps around, restarts the timer.
@@ -58,7 +92,9 @@ impl Carousel {
             return false;
         }
         self.previous = Some(self.index);
+        self.previous_serial = self.serial;
         self.index = index;
+        self.serial += 1;
         self.shown_at = now;
         true
     }
@@ -70,6 +106,15 @@ impl Carousel {
             return false;
         }
         self.step(1, now)
+    }
+
+    /// Drops the outgoing slide once the incoming one covers it; true if it did.
+    pub fn settle(&mut self, now: Instant) -> bool {
+        if self.previous.is_some() && now.duration_since(self.shown_at) >= SETTLE {
+            self.previous = None;
+            return true;
+        }
+        false
     }
 
     pub fn set_paused(&mut self, paused: bool, now: Instant) {
@@ -164,5 +209,38 @@ mod tests {
         assert_eq!((c.index(), c.previous()), (3, None));
         c.reset(2, None, t0);
         assert_eq!(c.index(), 0);
+    }
+
+    #[test]
+    fn outgoing_slide_is_dropped_after_the_fade() {
+        let (mut c, t0) = carousel(3);
+        c.step(1, t0);
+        assert!(!c.settle(t0 + FADE));
+        assert_eq!(c.previous(), Some(0));
+        assert!(c.settle(t0 + SETTLE));
+        assert_eq!(c.previous(), None);
+        assert!(!c.settle(t0 + SETTLE));
+    }
+
+    #[test]
+    fn serials_follow_showings() {
+        let (mut c, t0) = carousel(3);
+        let first = c.serial();
+        c.step(1, t0);
+        assert_eq!(
+            c.previous_serial(),
+            first,
+            "outgoing slide keeps its serial"
+        );
+        assert_ne!(c.serial(), first);
+        let second = c.serial();
+        c.reset(3, Some(1), t0);
+        assert_eq!(c.serial(), second, "kept slide doesn't fade in again");
+        c.reset(3, None, t0);
+        assert_ne!(c.serial(), second);
+        let before = c.serial();
+        c.restart(3, 2, t0);
+        assert_eq!(c.index(), 2);
+        assert_ne!(c.serial(), before);
     }
 }

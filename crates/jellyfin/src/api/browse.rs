@@ -10,6 +10,7 @@ pub enum SortBy {
     DateAdded,
     ReleaseDate,
     Rating,
+    Random,
 }
 
 impl SortBy {
@@ -19,6 +20,7 @@ impl SortBy {
             SortBy::DateAdded => "DateCreated,SortName",
             SortBy::ReleaseDate => "PremiereDate,ProductionYear,SortName",
             SortBy::Rating => "CommunityRating,SortName",
+            SortBy::Random => "Random",
         }
     }
 }

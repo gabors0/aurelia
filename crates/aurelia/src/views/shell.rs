@@ -170,7 +170,7 @@ impl Shell {
         // additions and progress from other devices show up.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() && is_stale(this.last_refresh, std::time::Instant::now()) {
-                this.refresh(&Refresh, window, cx);
+                this.reload(false, window, cx);
             }
         });
         let mut this = Self {
@@ -223,10 +223,20 @@ impl Shell {
     }
 
     fn refresh(&mut self, _: &Refresh, window: &mut Window, cx: &mut Context<Self>) {
+        self.reload(true, window, cx);
+    }
+
+    /// `reshuffle`: asked for by the user, so Home also re-rolls its hero.
+    fn reload(&mut self, reshuffle: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.refreshes += 1;
         self.last_refresh = std::time::Instant::now();
         crate::images::ImageStore::retry_failed(cx);
-        self.nav.page().clone().refresh(window, cx);
+        let page = self.nav.page().clone();
+        if reshuffle {
+            page.reshuffle(window, cx);
+        } else {
+            page.refresh(window, cx);
+        }
         cx.notify();
     }
 
