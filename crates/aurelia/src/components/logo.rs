@@ -1,27 +1,30 @@
-use gpui_kit::prelude::*;
-use gpui_kit::{Pixels, div, linear_color_stop, linear_gradient, px, rgb, rgba};
+//! The Aurelia mark: a moon jellyfish (*Aurelia aurita*) seen from above —
+//! a glowing bell with its four horseshoe-shaped gonads.
 
-/// The Aurelia mark: a glowing moon-jellyfish bell.
+use std::sync::{Arc, LazyLock};
+
+use gpui_kit::prelude::*;
+use gpui_kit::{Image, ImageFormat, ImageSource, ObjectFit, Pixels, div, img, px};
+
+static MARK: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Svg,
+        include_bytes!("../../assets/logo.svg").to_vec(),
+    ))
+});
+
 pub fn mark(size: Pixels) -> impl IntoElement {
-    div()
+    img(ImageSource::Image(MARK.clone()))
         .size(size)
-        .rounded_full()
-        .p(size * 0.18)
-        .bg(rgba(0xB69CFF33))
-        .border_1()
-        .border_color(rgba(0xB69CFF66))
-        .child(div().size_full().rounded_full().bg(linear_gradient(
-            150.,
-            linear_color_stop(rgb(0xE6DCFF), 0.),
-            linear_color_stop(rgb(0x8D6BFF), 1.),
-        )))
+        .flex_shrink_0()
+        .object_fit(ObjectFit::Contain)
 }
 
 pub fn wordmark(size: Pixels) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(size * 0.35)
+        .gap(size * 0.32)
         .child(mark(size))
         .child(
             div()
@@ -33,5 +36,5 @@ pub fn wordmark(size: Pixels) -> impl IntoElement {
 }
 
 pub fn small() -> impl IntoElement {
-    wordmark(px(22.))
+    wordmark(px(26.))
 }
