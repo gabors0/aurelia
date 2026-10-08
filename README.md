@@ -15,7 +15,8 @@ progress kept in sync with the server.
 
 ## Features
 
-- **Home**: a rotating hero of what you're watching and what's new, then
+- **Home**: a hero slideshow of what you're watching and what's new (advances
+  every 8 s, pauses while you point at it, with arrows and ←/→), then
   Continue Watching, Next Up and the latest additions to every library.
 - **Libraries**: a virtualised poster grid for libraries of any size, sorted by
   name, date added, release date or rating, and filtered to unwatched or
@@ -59,6 +60,7 @@ Aurelia needs `mpv` on `PATH`, or set `AURELIA_MPV=/path/to/mpv`.
 | Key | Action |
 |---|---|
 | `Enter` | Play the movie, episode or show on screen |
+| `←` / `→` | Previous / next slide on Home |
 | `Esc`, `Alt+←`, mouse back | Back |
 | `Alt+→`, mouse forward | Forward |
 | `Ctrl+R`, `F5` | Refresh |

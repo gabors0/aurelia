@@ -1,5 +1,6 @@
 //! The pages the shell navigates between.
 
+pub mod carousel;
 pub mod grid;
 pub mod home;
 pub mod item;
@@ -61,6 +62,13 @@ impl Page {
             Page::Item(page) => page.update(cx, |page, cx| page.play(false, window, cx)),
             Page::Series(page) => page.update(cx, |page, cx| page.play(window, cx)),
             _ => {}
+        }
+    }
+
+    /// ←/→ on Home browse the hero slides.
+    pub fn step_hero(&self, delta: isize, cx: &mut App) {
+        if let Page::Home(page) = self {
+            page.update(cx, |page, cx| page.step_hero(delta, cx));
         }
     }
 

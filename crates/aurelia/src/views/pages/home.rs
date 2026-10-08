@@ -2,18 +2,20 @@
 //! Next Up and the latest additions to every library.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::h_flex;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::*;
 use gpui_kit::{
     Animation, AnimationExt as _, AnyElement, Context, ElementId, FontWeight, Hsla, ScrollHandle,
-    SharedString, Task, Window, div, hsla, px,
+    SharedString, Task, Window, div, hsla, px, rgba,
 };
 use jellyfin::{BaseItem, ItemKind, UserView};
 
+use super::carousel::Carousel;
 use crate::components::button::{glass_button, play_button};
 use crate::components::hero;
 use crate::components::meta;
@@ -28,7 +30,6 @@ use crate::theme::Palette;
 use crate::views::shell::{self, NAV_HEIGHT};
 
 const HERO_SLIDES: usize = 5;
-const HERO_INTERVAL: Duration = Duration::from_secs(9);
 const HERO_HEIGHT: f32 = 0.72;
 
 pub struct HomePage {
@@ -36,9 +37,7 @@ pub struct HomePage {
     next_up: Loadable<Vec<BaseItem>>,
     latest: Vec<(UserView, Loadable<Vec<BaseItem>>)>,
     hero: Vec<BaseItem>,
-    hero_index: usize,
-    hero_previous: Option<usize>,
-    hero_hovered: bool,
+    carousel: Carousel,
     scroll: ScrollHandle,
     rows: HashMap<SharedString, ScrollHandle>,
     _load: Option<Task<()>>,
@@ -49,10 +48,12 @@ impl HomePage {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let timer = cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(HERO_INTERVAL).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
                 let Ok(()) = this.update(cx, |this, cx| {
-                    if !this.hero_hovered && this.hero.len() > 1 {
-                        this.show_slide((this.hero_index + 1) % this.hero.len(), cx);
+                    if this.carousel.tick(Instant::now()) {
+                        cx.notify();
                     }
                 }) else {
                     return;
@@ -64,9 +65,7 @@ impl HomePage {
             next_up: Loadable::Loading,
             latest: Vec::new(),
             hero: Vec::new(),
-            hero_index: 0,
-            hero_previous: None,
-            hero_hovered: false,
+            carousel: Carousel::new(Instant::now()),
             scroll: ScrollHandle::new(),
             rows: HashMap::new(),
             _load: None,
@@ -141,7 +140,7 @@ impl HomePage {
     /// Hero picks: what you're in the middle of, then the newest arrivals —
     /// only items with backdrop art, one per show.
     fn rebuild_hero(&mut self) {
-        let current = self.hero.get(self.hero_index).map(|i| i.id.clone());
+        let current = self.hero.get(self.carousel.index()).map(|i| i.id.clone());
         let mut picks: Vec<BaseItem> = Vec::new();
         let mut seen_series = Vec::new();
         let resume = self.resume.ready().into_iter().flatten().take(2);
@@ -161,20 +160,26 @@ impl HomePage {
             seen_series.push(key);
             picks.push(item.clone());
         }
-        self.hero_index = current
-            .and_then(|id| picks.iter().position(|i| i.id == id))
-            .unwrap_or(0);
-        self.hero_previous = None;
+        let keep = current.and_then(|id| picks.iter().position(|i| i.id == id));
+        self.carousel.reset(picks.len(), keep, Instant::now());
         self.hero = picks;
     }
 
     fn show_slide(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index == self.hero_index || index >= self.hero.len() {
-            return;
+        if self.carousel.go_to(index, Instant::now()) {
+            cx.notify();
         }
-        self.hero_previous = Some(self.hero_index);
-        self.hero_index = index;
-        cx.notify();
+    }
+
+    /// Previous/next slide (arrow buttons, ←/→ keys).
+    pub fn step_hero(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.carousel.step(delta, Instant::now()) {
+            cx.notify();
+        }
+    }
+
+    fn pause_hero(&mut self, paused: bool) {
+        self.carousel.set_paused(paused, Instant::now());
     }
 
     pub fn scroll_handle(&self) -> &ScrollHandle {
@@ -191,7 +196,7 @@ impl HomePage {
     fn accent(&self, window: &mut Window, cx: &mut Context<Self>) -> Hsla {
         let client = AppState::client(cx);
         self.hero
-            .get(self.hero_index)
+            .get(self.carousel.index())
             .and_then(|item| hero::backdrop_request(&client, item))
             .and_then(
                 |request| match ImageStore::get(&ambient(&request), window, cx) {
@@ -254,6 +259,8 @@ impl HomePage {
             .child(hero::backdrop(("hero-art", index), request))
             .child(
                 div()
+                    .id(("hero-content", index))
+                    .on_hover(cx.listener(|this, hovered: &bool, _, _| this.pause_hero(*hovered)))
                     .absolute()
                     .left(ROW_PADDING)
                     .bottom(px(150.))
@@ -324,15 +331,14 @@ impl HomePage {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let count = self.hero.len();
-        let current = self.hero_index;
+        let current = self.carousel.index();
         div()
             .id("hero")
             .relative()
             .w_full()
             .h(height)
             .flex_shrink_0()
-            .on_hover(cx.listener(|this, hovered: &bool, _, _| this.hero_hovered = *hovered))
-            .when_some(self.hero_previous, |this, previous| {
+            .when_some(self.carousel.previous(), |this, previous| {
                 this.child(self.render_slide(previous, false, accent, cx))
             })
             .when(count > 0, |this| {
@@ -340,13 +346,20 @@ impl HomePage {
             })
             .when(count > 1, |this| {
                 this.child(
-                    div()
+                    h_flex()
+                        .id("hero-controls")
+                        .on_hover(
+                            cx.listener(|this, hovered: &bool, _, _| this.pause_hero(*hovered)),
+                        )
                         .absolute()
                         .right(ROW_PADDING)
-                        .bottom(px(160.))
-                        .flex()
-                        .gap_2()
-                        .children((0..count).map(|i| {
+                        .bottom(px(146.))
+                        .gap_3()
+                        .child(
+                            hero_arrow("hero-prev", IconName::ChevronLeft)
+                                .on_click(cx.listener(|this, _, _, cx| this.step_hero(-1, cx))),
+                        )
+                        .child(h_flex().gap_2().children((0..count).map(|i| {
                             let active = i == current;
                             div()
                                 .id(("hero-dot", i))
@@ -361,7 +374,11 @@ impl HomePage {
                                 })
                                 .hover(|this| this.bg(hsla(0., 0., 1., 0.7)))
                                 .on_click(cx.listener(move |this, _, _, cx| this.show_slide(i, cx)))
-                        })),
+                        })))
+                        .child(
+                            hero_arrow("hero-next", IconName::ChevronRight)
+                                .on_click(cx.listener(|this, _, _, cx| this.step_hero(1, cx))),
+                        ),
                 )
             })
     }
@@ -465,6 +482,29 @@ impl HomePage {
     }
 }
 
+fn hero_arrow(id: &'static str, icon: IconName) -> gpui_kit::Stateful<gpui_kit::Div> {
+    div()
+        .id(id)
+        .size(px(40.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .bg(rgba(0x0A0B1099))
+        .border_1()
+        .border_color(hsla(0., 0., 1., 0.18))
+        .hover(|this| {
+            this.bg(rgba(0x22232ECC))
+                .border_color(hsla(0., 0., 1., 0.35))
+        })
+        .child(
+            gpui_kit::component::Icon::new(icon)
+                .size_5()
+                .text_color(Palette::text()),
+        )
+}
+
 fn loadable(result: jellyfin::Result<Vec<BaseItem>>) -> Loadable<Vec<BaseItem>> {
     Loadable::from_result(result)
 }
@@ -481,7 +521,7 @@ impl Render for HomePage {
         let client = AppState::client(cx);
         let ambient_request = self
             .hero
-            .get(self.hero_index)
+            .get(self.carousel.index())
             .and_then(|item| hero::backdrop_request(&client, item))
             .map(|request| ambient(&request));
         let rows = self.render_rows(accent);
@@ -506,7 +546,7 @@ impl Render for HomePage {
                             })
                             .child(
                                 crate::components::ambient::section(
-                                    ("ambient", self.hero_index),
+                                    ("ambient", self.carousel.index()),
                                     ambient_request,
                                     vec![
                                         div()

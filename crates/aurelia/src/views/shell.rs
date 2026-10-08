@@ -23,7 +23,18 @@ use gpui_kit::assets::IconName as icon;
 pub const NAV_HEIGHT: Pixels = px(64.);
 const CONTEXT: &str = "Shell";
 
-actions!(aurelia, [Back, Forward, Refresh, Quit, PlayCurrent]);
+actions!(
+    aurelia,
+    [
+        Back,
+        Forward,
+        Refresh,
+        Quit,
+        PlayCurrent,
+        PreviousSlide,
+        NextSlide
+    ]
+);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -33,6 +44,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-r", Refresh, Some(CONTEXT)),
         KeyBinding::new("f5", Refresh, Some(CONTEXT)),
         KeyBinding::new("enter", PlayCurrent, Some(CONTEXT)),
+        KeyBinding::new("left", PreviousSlide, Some(CONTEXT)),
+        KeyBinding::new("right", NextSlide, Some(CONTEXT)),
         KeyBinding::new("ctrl-q", Quit, None),
     ]);
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -173,6 +186,14 @@ impl Shell {
             window.focus(&self.focus, cx);
             cx.notify();
         }
+    }
+
+    fn previous_slide(&mut self, _: &PreviousSlide, _: &mut Window, cx: &mut Context<Self>) {
+        self.nav.page().clone().step_hero(-1, cx);
+    }
+
+    fn next_slide(&mut self, _: &NextSlide, _: &mut Window, cx: &mut Context<Self>) {
+        self.nav.page().clone().step_hero(1, cx);
     }
 
     fn play_current(&mut self, _: &PlayCurrent, window: &mut Window, cx: &mut Context<Self>) {
@@ -354,6 +375,8 @@ impl Render for Shell {
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::refresh))
             .on_action(cx.listener(Self::play_current))
+            .on_action(cx.listener(Self::previous_slide))
+            .on_action(cx.listener(Self::next_slide))
             .on_mouse_down(
                 MouseButton::Navigate(NavigationDirection::Back),
                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
