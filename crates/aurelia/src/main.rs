@@ -1,4 +1,6 @@
+mod components;
 mod format;
+mod images;
 mod loadable;
 mod nav;
 mod runtime;
@@ -57,6 +59,7 @@ fn main() {
             theme::init(cx);
             runtime::init(cx);
             state::AppState::init(cx);
+            images::ImageStore::init(cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),

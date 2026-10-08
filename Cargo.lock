@@ -503,11 +503,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "blurhash",
  "chrono",
  "dirs 6.0.0",
  "gpui-kit",
+ "image",
  "jellyfin",
  "player",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -725,6 +728,12 @@ dependencies = [
  "futures-lite",
  "piper",
 ]
+
+[[package]]
+name = "blurhash"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e79769241dcd44edf79a732545e8b5cec84c247ac060f5252cd51885d093a8fc"
 
 [[package]]
 name = "bstr"
