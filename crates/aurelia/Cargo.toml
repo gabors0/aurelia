@@ -1,0 +1,11 @@
+[package]
+name = "aurelia"
+description = "A cinematic Jellyfin desktop client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+anyhow.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing.workspace = true

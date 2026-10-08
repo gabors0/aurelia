@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+jellyfin = { path = "crates/jellyfin" }
+player = { path = "crates/player" }
+
+gpui-kit = "=0.7.1"
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+async-channel = "2"
+
+[profile.dev]
+# GPUI is painfully slow unoptimised; optimise dependencies but keep our code fast to build.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
