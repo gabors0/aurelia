@@ -502,9 +502,20 @@ name = "aurelia"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
+ "chrono",
+ "dirs 6.0.0",
  "gpui-kit",
+ "jellyfin",
+ "player",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

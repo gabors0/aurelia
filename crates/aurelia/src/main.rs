@@ -1,3 +1,9 @@
+mod format;
+mod loadable;
+mod nav;
+mod runtime;
+mod session;
+mod state;
 mod theme;
 
 use gpui_kit::component::{TitleBar, h_flex, v_flex};
@@ -49,6 +55,8 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             theme::init(cx);
+            runtime::init(cx);
+            state::AppState::init(cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),
