@@ -167,7 +167,10 @@ impl Client {
         Ok(())
     }
 
-    async fn send_json<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T> {
+    pub(crate) async fn send_json<T: DeserializeOwned>(
+        &self,
+        request: RequestBuilder,
+    ) -> Result<T> {
         let response = request.send().await.map_err(Error::from_reqwest)?;
         check_status(response.status())?;
         let body = response.text().await.map_err(Error::from_reqwest)?;

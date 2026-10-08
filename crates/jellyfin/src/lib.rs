@@ -2,6 +2,8 @@
 //! video-first desktop client needs. Compatible with Jellyfin 10.9 and newer.
 
 mod api;
+
+pub use api::*;
 mod client;
 mod error;
 mod models;
