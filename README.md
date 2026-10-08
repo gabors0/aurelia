@@ -63,7 +63,7 @@ Aurelia needs `mpv` on `PATH`, or set `AURELIA_MPV=/path/to/mpv`.
 | `←` / `→` | Previous / next slide on Home |
 | `Esc`, `Alt+←`, mouse back | Back |
 | `Alt+→`, mouse forward | Forward |
-| `Ctrl+R`, `F5` | Refresh |
+| `Ctrl+R`, `F5`, or the ⟳ button | Refresh (also automatic when you come back after a couple of minutes) |
 | `Ctrl+Q` | Quit |
 
 ## Architecture
@@ -95,4 +95,5 @@ These environment variables exist for screenshots and end-to-end testing:
 | `AURELIA_LOG=debug` | Logging filter (`tracing` syntax) |
 
 Use `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` to keep a test session away from
-your real one.
+your real one. To take screenshots without touching your desktop, run Aurelia
+in a headless compositor, e.g. `WLR_BACKENDS=headless sway` with `grim`.

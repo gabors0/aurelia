@@ -1,6 +1,7 @@
 //! The signed-in window: floating navigation bar over the current page,
 //! history, keyboard shortcuts, and app-wide error handling.
 
+use gpui_kit::AnimationExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
@@ -21,6 +22,13 @@ use crate::views::pages::Page;
 use gpui_kit::assets::IconName as icon;
 
 pub const NAV_HEIGHT: Pixels = px(64.);
+/// Coming back to the window after this long refreshes the page.
+const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Whether data loaded at `last` is old enough to reload on return.
+fn is_stale(last: std::time::Instant, now: std::time::Instant) -> bool {
+    now.duration_since(last) >= STALE_AFTER
+}
 const CONTEXT: &str = "Shell";
 
 actions!(
@@ -138,6 +146,10 @@ fn dev_start_route() -> Option<Route> {
 pub struct Shell {
     nav: Nav<Page>,
     focus: FocusHandle,
+    /// Bumped on every refresh; keys the refresh icon's spin.
+    refreshes: usize,
+    last_refresh: std::time::Instant,
+    _activation: gpui_kit::Subscription,
 }
 
 impl EventEmitter<ShellEvent> for Shell {}
@@ -154,9 +166,19 @@ impl Shell {
         let home = Page::for_route(&Route::Home, window, cx);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        // Back at the window after a while: reload what's on screen so new
+        // additions and progress from other devices show up.
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active() && is_stale(this.last_refresh, std::time::Instant::now()) {
+                this.refresh(&Refresh, window, cx);
+            }
+        });
         let mut this = Self {
             nav: Nav::new(Route::Home, home),
             focus,
+            refreshes: 0,
+            last_refresh: std::time::Instant::now(),
+            _activation: activation,
         };
         if let Some(route) = dev_start_route() {
             this.navigate(route, window, cx);
@@ -201,8 +223,43 @@ impl Shell {
     }
 
     fn refresh(&mut self, _: &Refresh, window: &mut Window, cx: &mut Context<Self>) {
+        self.refreshes += 1;
+        self.last_refresh = std::time::Instant::now();
         crate::images::ImageStore::retry_failed(cx);
         self.nav.page().clone().refresh(window, cx);
+        cx.notify();
+    }
+
+    fn render_refresh(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let glyph = gpui_kit::component::Icon::new(icon::RefreshCw)
+            .size_4()
+            .text_color(Palette::text_secondary());
+        let glyph = if self.refreshes > 0 {
+            glyph
+                .with_animation(
+                    ("refresh-spin", self.refreshes),
+                    gpui_kit::Animation::new(std::time::Duration::from_millis(650))
+                        .with_easing(gpui_kit::ease_in_out),
+                    |glyph, t| glyph.rotate(gpui_kit::percentage(t)),
+                )
+                .into_any_element()
+        } else {
+            glyph.into_any_element()
+        };
+        div()
+            .id("refresh")
+            .size_8()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .cursor_pointer()
+            .hover(|this| this.bg(Palette::glass_strong()))
+            .tooltip(|window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new("Refresh (Ctrl+R)").build(window, cx)
+            })
+            .on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
+            .child(glyph)
     }
 
     fn render_tab(
@@ -327,36 +384,40 @@ impl Shell {
                                 .child(tabs),
                         )
                         .child(
-                            Button::new("account")
-                                .ghost()
-                                .small()
-                                .child(
-                                    div()
-                                        .size_7()
-                                        .rounded_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .bg(rgba(0xB69CFF40))
-                                        .text_color(Palette::text())
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_sm()
-                                        .child(initial),
-                                )
-                                .dropdown_menu_with_anchor(
-                                    gpui_kit::Anchor::TopRight,
-                                    move |menu, _, _| {
-                                        menu.label(format!("{user} · {server}")).separator().item(
-                                            PopupMenuItem::new("Sign out")
-                                                .icon(icon::LogOut)
-                                                .on_click(|_, _, cx| {
-                                                    with_shell(cx, |_, cx| {
-                                                        cx.emit(ShellEvent::SignOut)
-                                                    })
-                                                }),
-                                        )
-                                    },
-                                ),
+                            h_flex().gap_2().child(self.render_refresh(cx)).child(
+                                Button::new("account")
+                                    .ghost()
+                                    .small()
+                                    .child(
+                                        div()
+                                            .size_7()
+                                            .rounded_full()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .bg(rgba(0xB69CFF40))
+                                            .text_color(Palette::text())
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_sm()
+                                            .child(initial),
+                                    )
+                                    .dropdown_menu_with_anchor(
+                                        gpui_kit::Anchor::TopRight,
+                                        move |menu, _, _| {
+                                            menu.label(format!("{user} · {server}"))
+                                                .separator()
+                                                .item(
+                                                    PopupMenuItem::new("Sign out")
+                                                        .icon(icon::LogOut)
+                                                        .on_click(|_, _, cx| {
+                                                            with_shell(cx, |_, cx| {
+                                                                cx.emit(ShellEvent::SignOut)
+                                                            })
+                                                        }),
+                                                )
+                                        },
+                                    ),
+                            ),
                         ),
                 ),
             )
@@ -387,5 +448,20 @@ impl Render for Shell {
             )
             .child(div().size_full().child(self.nav.page().view()))
             .child(self.render_nav(window, cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::{STALE_AFTER, is_stale};
+
+    #[test]
+    fn data_goes_stale_after_two_minutes() {
+        let t0 = Instant::now();
+        assert!(!is_stale(t0, t0 + Duration::from_secs(30)));
+        assert!(!is_stale(t0, t0 + STALE_AFTER - Duration::from_millis(1)));
+        assert!(is_stale(t0, t0 + STALE_AFTER));
     }
 }
