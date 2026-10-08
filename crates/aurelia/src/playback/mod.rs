@@ -77,10 +77,10 @@ async fn next_episode(
     series_id: &str,
     season_id: Option<&str>,
 ) -> jellyfin::Result<Option<String>> {
-    if season_id.is_none() {
-        if let Some(next) = client.next_up(Some(series_id), 1, true).await?.first() {
-            return Ok(Some(next.id.clone()));
-        }
+    if season_id.is_none()
+        && let Some(next) = client.next_up(Some(series_id), 1, true).await?.first()
+    {
+        return Ok(Some(next.id.clone()));
     }
     let season_id = match season_id {
         Some(id) => id.to_string(),

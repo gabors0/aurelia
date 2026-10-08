@@ -8,8 +8,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Disableable as _, Sizable as _, TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AppContext as _, Context, Entity, EventEmitter, FontWeight, SharedString, Subscription, Task,
-    Window, div, px,
+    Context, Entity, EventEmitter, FontWeight, SharedString, Subscription, Task, Window, div, px,
 };
 use jellyfin::{Client, PublicSystemInfo};
 

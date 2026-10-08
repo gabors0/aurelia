@@ -86,11 +86,7 @@ impl EventTranslator {
                 };
                 self.position = Duration::from_secs_f64(seconds);
                 let due = self.last_emitted.is_none_or(|last| {
-                    let delta = if self.position > last {
-                        self.position - last
-                    } else {
-                        last - self.position
-                    };
+                    let delta = self.position.abs_diff(last);
                     delta >= Duration::from_secs(1)
                 });
                 if self.started && due {

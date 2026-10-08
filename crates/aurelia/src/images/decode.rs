@@ -19,7 +19,7 @@ pub fn decode(bytes: &[u8]) -> Option<RgbaImage> {
 
 /// GPUI wants BGRA.
 pub fn to_render_image(mut image: RgbaImage) -> Arc<RenderImage> {
-    for pixel in image.chunks_exact_mut(4) {
+    for pixel in image.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
     Arc::new(RenderImage::new(vec![image::Frame::new(image)]))

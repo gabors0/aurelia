@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Aurelia
+GenericName=Jellyfin Client
+Comment=Watch your Jellyfin movies and shows
+Exec=aurelia
+Icon=dev.aurelia.Aurelia
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=jellyfin;media;movies;tv;
+StartupWMClass=dev.aurelia.Aurelia

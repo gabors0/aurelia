@@ -350,10 +350,10 @@ impl BaseItem {
 
     /// Poster for cards: the item's own, else the series poster for episodes.
     pub fn poster_image(&self) -> Option<ImageRef> {
-        if self.kind != ItemKind::Episode {
-            if let Some(image) = self.primary_image() {
-                return Some(image);
-            }
+        if self.kind != ItemKind::Episode
+            && let Some(image) = self.primary_image()
+        {
+            return Some(image);
         }
         if let (Some(series), Some(tag)) = (&self.series_id, &self.series_primary_image_tag) {
             return Some(self.image_ref(series, ImageKind::Primary, tag));
@@ -370,10 +370,10 @@ impl BaseItem {
     /// 16:9 artwork for landscape cards: episode still, Thumb, parent Thumb,
     /// then backdrop.
     pub fn landscape_image(&self) -> Option<ImageRef> {
-        if self.kind == ItemKind::Episode {
-            if let Some(image) = self.primary_image() {
-                return Some(image);
-            }
+        if self.kind == ItemKind::Episode
+            && let Some(image) = self.primary_image()
+        {
+            return Some(image);
         }
         if let Some(tag) = self.image_tags.get("Thumb") {
             return Some(self.image_ref(&self.id, ImageKind::Thumb, tag));

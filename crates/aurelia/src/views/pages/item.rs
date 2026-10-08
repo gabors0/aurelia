@@ -13,9 +13,8 @@ use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, WeakEntity, Window,
     div, hsla, px,
 };
-use jellyfin::{BaseItem, ItemKind, MediaStream, Person, StreamKind};
+use jellyfin::{BaseItem, ItemKind, MediaStream, StreamKind};
 
-use crate::components::art::Art;
 use crate::components::button::{glass_button, play_button, round_button};
 use crate::components::hero;
 use crate::components::meta;

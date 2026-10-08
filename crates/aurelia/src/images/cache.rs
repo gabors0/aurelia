@@ -1,6 +1,6 @@
 //! On-disk cache of downloaded image bytes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Stable 64-bit FNV-1a of the URL, as hex. Image URLs carry the server's
 /// image tag, so a changed image gets a new key automatically.
@@ -28,10 +28,6 @@ impl DiskCache {
             .join("aurelia")
             .join("images");
         Self::new(dir)
-    }
-
-    pub fn dir(&self) -> &Path {
-        &self.dir
     }
 
     fn path(&self, url: &str) -> PathBuf {

@@ -10,11 +10,10 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::*;
 use gpui_kit::{
     Animation, AnimationExt as _, AnyElement, Context, ElementId, FontWeight, Hsla, ScrollHandle,
-    SharedString, Task, Window, div, hsla, px, rgba,
+    SharedString, Task, Window, div, hsla, px,
 };
 use jellyfin::{BaseItem, ItemKind, UserView};
 
-use crate::components::art::Art;
 use crate::components::button::{glass_button, play_button};
 use crate::components::hero;
 use crate::components::meta;

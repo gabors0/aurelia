@@ -5,9 +5,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Sizable as _, TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::*;
-use gpui_kit::{
-    AppContext as _, Context, Entity, FontWeight, SharedString, Subscription, Task, Window, div, px,
-};
+use gpui_kit::{Context, Entity, FontWeight, SharedString, Subscription, Task, Window, div, px};
 use jellyfin::Client;
 
 use crate::components::glass::glass;
@@ -127,9 +125,10 @@ impl AppRoot {
     }
 
     fn sign_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Revoke the token server-side; signing out locally must not wait for it.
+        // Revoke the token server-side; signing out locally must not wait for
+        // it. Dropping the handle leaves the request running.
         let client = AppState::client(cx);
-        runtime::api(cx, async move { client.logout().await });
+        drop(runtime::api(cx, async move { client.logout().await }));
         AppState::sign_out(cx);
         self.show_login(None, window, cx);
     }

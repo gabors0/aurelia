@@ -44,10 +44,6 @@ impl AppState {
         cx.global::<AppState>()
     }
 
-    pub fn device(&self) -> &DeviceInfo {
-        &self.device
-    }
-
     pub fn store(&self) -> &SessionStore {
         &self.store
     }
