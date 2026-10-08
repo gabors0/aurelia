@@ -77,19 +77,10 @@ impl LoginView {
                 .masked(true)
         });
 
-        let enter = |this: &mut Self,
-                     _: &Entity<InputState>,
-                     event: &InputEvent,
-                     window: &mut Window,
-                     cx: &mut Context<Self>| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.submit(window, cx);
-            }
-        };
         let subscriptions = vec![
-            cx.subscribe_in(&server, window, enter),
-            cx.subscribe_in(&username, window, enter),
-            cx.subscribe_in(&password, window, enter),
+            cx.subscribe_in(&server, window, Self::on_input),
+            cx.subscribe_in(&username, window, Self::on_input),
+            cx.subscribe_in(&password, window, Self::on_input),
         ];
         server.update(cx, |input, cx| input.focus(window, cx));
 
@@ -106,9 +97,38 @@ impl LoginView {
         };
         // Development: a server given in the environment is probed right away.
         if from_env.is_some() {
-            this.probe_server(cx);
+            this.probe_server(window, cx);
         }
         this
+    }
+
+    fn on_input(
+        &mut self,
+        input: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            // A message about what was typed before is stale once you edit.
+            InputEvent::Change if self.error.is_some() => {
+                self.error = None;
+                cx.notify();
+            }
+            // Enter only acts for the fields of the step on screen; a stray
+            // Enter in the (hidden) server field must not submit sign-in.
+            InputEvent::PressEnter { .. } => {
+                let on_screen = match self.step {
+                    Step::Server => input == &self.server,
+                    Step::Credentials { .. } => input == &self.username || input == &self.password,
+                    Step::QuickConnect { .. } => false,
+                };
+                if on_screen {
+                    self.submit(window, cx);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -116,13 +136,13 @@ impl LoginView {
             return;
         }
         match &self.step {
-            Step::Server => self.probe_server(cx),
+            Step::Server => self.probe_server(window, cx),
             Step::Credentials { .. } => self.sign_in(window, cx),
             Step::QuickConnect { .. } => {}
         }
     }
 
-    fn probe_server(&mut self, cx: &mut Context<Self>) {
+    fn probe_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let address = self.server.read(cx).value().to_string();
         let client = match AppState::global(cx).anonymous_client(&address) {
             Ok(client) => client,
@@ -140,9 +160,9 @@ impl LoginView {
             let quick_connect = probe_client.quick_connect_enabled().await.unwrap_or(false);
             Ok((info, quick_connect))
         });
-        self._task = Some(cx.spawn(async move |this, cx| {
+        self._task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = probe.await;
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
                 this.busy = false;
                 match result {
                     Ok((info, quick_connect)) => {
@@ -151,6 +171,13 @@ impl LoginView {
                             info,
                             quick_connect,
                         };
+                        // Carry on typing: focus the first empty field.
+                        let target = if this.username.read(cx).value().is_empty() {
+                            this.username.clone()
+                        } else {
+                            this.password.clone()
+                        };
+                        target.update(cx, |input, cx| input.focus(window, cx));
                     }
                     Err(err) => this.error = Some(describe(&err).into()),
                 }
