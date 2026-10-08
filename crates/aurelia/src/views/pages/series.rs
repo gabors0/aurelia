@@ -63,7 +63,9 @@ pub struct SeriesPage {
     scroll: ScrollHandle,
     cast: ScrollHandle,
     _load: Option<Task<()>>,
-    _episodes: Option<Task<()>>,
+    /// One load per season, so switching seasons never cancels a load and
+    /// leaves that season stuck on "Loading".
+    episode_loads: HashMap<String, Task<()>>,
     _toggle: Option<Task<()>>,
 }
 
@@ -84,7 +86,7 @@ impl SeriesPage {
             scroll: ScrollHandle::new(),
             cast: ScrollHandle::new(),
             _load: None,
-            _episodes: None,
+            episode_loads: HashMap::new(),
             _toggle: None,
         };
         this.refresh(window, cx);
@@ -119,6 +121,7 @@ impl SeriesPage {
                         this.next_up = next_up;
                         // Episodes may have changed (after playback): reload.
                         this.episodes.clear();
+                        this.episode_loads.clear();
                         if let Some(season) = selected {
                             this.select_season(season, cx);
                         }
@@ -150,18 +153,21 @@ impl SeriesPage {
             cx,
             async move { client.episodes(&series, &season_id).await },
         );
-        self._episodes = Some(cx.spawn(async move |this, cx| {
+        let key = season.clone();
+        let load = cx.spawn(async move |this, cx| {
             let result = fetch.await;
             this.update(cx, |this, cx| {
                 if let Err(err) = &result {
                     shell::load_failed(err, cx);
                 }
+                this.episode_loads.remove(&season);
                 this.episodes.insert(season, Loadable::from_result(result));
                 crate::dev::apply_initial_scroll(&this.scroll);
                 cx.notify();
             })
             .ok();
-        }));
+        });
+        self.episode_loads.insert(key, load);
         cx.notify();
     }
 

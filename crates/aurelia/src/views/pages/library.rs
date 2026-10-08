@@ -66,7 +66,7 @@ impl LibraryPage {
         let kinds = match view.as_ref().and_then(|v| v.collection_type.as_deref()) {
             Some("movies") => vec![ItemKind::Movie],
             Some("tvshows") => vec![ItemKind::Series],
-            _ => vec![ItemKind::Movie, ItemKind::Series],
+            _ => vec![ItemKind::Movie, ItemKind::Series, ItemKind::Video],
         };
         let mut this = Self {
             view_id,

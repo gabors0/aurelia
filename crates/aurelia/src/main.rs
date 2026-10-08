@@ -35,6 +35,10 @@ fn main() {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("dev.aurelia.Aurelia".into()),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Aurelia".into()),
+                    ..TitleBar::title_bar_options()
+                }),
                 ..TitleBar::window_options()
             };
             gpui_kit::open_window(options, cx, |window, cx| {

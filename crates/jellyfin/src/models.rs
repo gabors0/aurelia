@@ -53,9 +53,13 @@ pub struct UserView {
 }
 
 impl UserView {
-    /// Movies and TV libraries — the only ones Aurelia browses.
+    /// Libraries holding movies, shows or other video. Mixed-content
+    /// folders have no collection type (or "mixed").
     pub fn is_video_library(&self) -> bool {
-        matches!(self.collection_type.as_deref(), Some("movies" | "tvshows"))
+        matches!(
+            self.collection_type.as_deref(),
+            None | Some("movies" | "tvshows" | "homevideos" | "mixed")
+        )
     }
 }
 

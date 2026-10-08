@@ -130,3 +130,35 @@ fn normalizes_server_urls() {
     assert!(normalize_server_url("").is_err());
     assert!(normalize_server_url("ftp://host").is_err());
 }
+
+#[test]
+fn video_libraries_include_mixed_and_home_videos() {
+    let view = |collection: Option<&str>| UserView {
+        collection_type: collection.map(str::to_string),
+        ..Default::default()
+    };
+    for kind in [
+        Some("movies"),
+        Some("tvshows"),
+        Some("homevideos"),
+        Some("mixed"),
+        None,
+    ] {
+        assert!(
+            view(kind).is_video_library(),
+            "{kind:?} should be browsable"
+        );
+    }
+    for kind in [
+        Some("music"),
+        Some("playlists"),
+        Some("boxsets"),
+        Some("livetv"),
+        Some("books"),
+    ] {
+        assert!(
+            !view(kind).is_video_library(),
+            "{kind:?} is not a video library"
+        );
+    }
+}
