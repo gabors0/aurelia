@@ -29,7 +29,7 @@ impl Page {
             Route::Library { id, name } => {
                 Page::Library(cx.new(|cx| LibraryPage::new(id.clone(), name.clone(), window, cx)))
             }
-            Route::Item { .. } => Page::Item(cx.new(|cx| ItemPage::new(window, cx))),
+            Route::Item { id } => Page::Item(cx.new(|cx| ItemPage::new(id.clone(), window, cx))),
             Route::Series { .. } => Page::Series(cx.new(|cx| SeriesPage::new(window, cx))),
         }
     }
@@ -47,7 +47,15 @@ impl Page {
     pub fn scroll_offset(&self, cx: &App) -> gpui_kit::Pixels {
         match self {
             Page::Home(page) => page.read(cx).scroll_handle().offset().y,
+            Page::Item(page) => page.read(cx).scroll_handle().offset().y,
             _ => gpui_kit::px(0.),
+        }
+    }
+
+    /// Enter on a page: play what it shows.
+    pub fn primary_action(&self, window: &mut Window, cx: &mut App) {
+        if let Page::Item(page) = self {
+            page.update(cx, |page, cx| page.play(false, window, cx));
         }
     }
 

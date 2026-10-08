@@ -57,6 +57,11 @@ impl ImageRequest {
         }
     }
 
+    pub fn with_blurhash(mut self, hash: impl Into<SharedString>) -> Self {
+        self.blurhash = Some(hash.into());
+        self
+    }
+
     pub fn ambient(mut self) -> Self {
         self.style = ImageStyle::Ambient;
         self

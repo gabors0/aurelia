@@ -23,7 +23,7 @@ use gpui_kit::assets::IconName as icon;
 pub const NAV_HEIGHT: Pixels = px(64.);
 const CONTEXT: &str = "Shell";
 
-actions!(aurelia, [Back, Forward, Refresh, Quit]);
+actions!(aurelia, [Back, Forward, Refresh, Quit, PlayCurrent]);
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
@@ -32,6 +32,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("alt-right", Forward, Some(CONTEXT)),
         KeyBinding::new("ctrl-r", Refresh, Some(CONTEXT)),
         KeyBinding::new("f5", Refresh, Some(CONTEXT)),
+        KeyBinding::new("enter", PlayCurrent, Some(CONTEXT)),
         KeyBinding::new("ctrl-q", Quit, None),
     ]);
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -79,6 +80,10 @@ pub fn report_error(err: &jellyfin::Error, window: &mut Window, cx: &mut App) {
     } else {
         window.push_notification(Notification::error(describe(err)), cx);
     }
+}
+
+pub fn report_message(message: impl Into<SharedString>, window: &mut Window, cx: &mut App) {
+    window.push_notification(Notification::error(message), cx);
 }
 
 pub fn notify(message: impl Into<SharedString>, window: &mut Window, cx: &mut App) {
@@ -168,6 +173,10 @@ impl Shell {
             window.focus(&self.focus, cx);
             cx.notify();
         }
+    }
+
+    fn play_current(&mut self, _: &PlayCurrent, window: &mut Window, cx: &mut Context<Self>) {
+        self.nav.page().clone().primary_action(window, cx);
     }
 
     fn refresh(&mut self, _: &Refresh, window: &mut Window, cx: &mut Context<Self>) {
@@ -344,6 +353,7 @@ impl Render for Shell {
             .on_action(cx.listener(Self::back))
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::refresh))
+            .on_action(cx.listener(Self::play_current))
             .on_mouse_down(
                 MouseButton::Navigate(NavigationDirection::Back),
                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),

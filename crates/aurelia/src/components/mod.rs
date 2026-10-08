@@ -1,5 +1,6 @@
 //! Aurelia's own building blocks, layered on gpui-component.
 
+pub mod ambient;
 pub mod art;
 pub mod aurora;
 pub mod button;

@@ -14,6 +14,10 @@ use gpui_kit::component::TitleBar;
 use gpui_kit::*;
 
 fn main() {
+    let filter = tracing_subscriber::EnvFilter::try_from_env("AURELIA_LOG")
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,aurelia=info,player=info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+
     gpui_kit::application()
         .with_assets(gpui_kit::assets::AllAssets)
         .run(|cx| {

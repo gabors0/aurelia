@@ -495,23 +495,6 @@ impl Render for HomePage {
             .relative()
             .size_full()
             .bg(Palette::bg())
-            // Ambient light: the hero art, blurred, washing the whole page.
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .child(
-                        Art::new(("ambient", self.hero_index), ambient_request)
-                            .bare()
-                            .size_full()
-                            .opacity(0.9),
-                    )
-                    .child(div().absolute().inset_0().bg(gpui_kit::linear_gradient(
-                        180.,
-                        gpui_kit::linear_color_stop(rgba(0x0A0B1033), 0.3),
-                        gpui_kit::linear_color_stop(rgba(0x0A0B10E6), 1.),
-                    ))),
-            )
             .child(
                 div()
                     .id("home-scroll")
@@ -522,28 +505,36 @@ impl Render for HomePage {
                         div()
                             .flex()
                             .flex_col()
-                            .pb_16()
                             .when(self.hero.is_empty(), |this| this.pt(NAV_HEIGHT + px(24.)))
                             .when(!self.hero.is_empty(), |this| {
                                 this.child(self.render_hero(hero_height, accent, cx))
                             })
                             .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_10()
-                                    .when(!self.hero.is_empty(), |this| this.mt(px(-110.)))
-                                    .children(error)
-                                    .children(rows)
-                                    .when(empty, |this| {
-                                        this.child(
-                                            div()
-                                                .px(ROW_PADDING)
-                                                .pt_16()
-                                                .text_color(Palette::text_secondary())
-                                                .child("Nothing here yet. Add some movies or shows to your server."),
-                                        )
-                                    }),
+                                crate::components::ambient::section(
+                                    ("ambient", self.hero_index),
+                                    ambient_request,
+                                    vec![
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_10()
+                                            .pb_16()
+                                            // Shelves rise into the hero; the ambient light doesn't.
+                                            .when(!self.hero.is_empty(), |this| this.mt(px(-110.)))
+                                            .children(error)
+                                            .children(rows)
+                                            .when(empty, |this| {
+                                                this.child(
+                                                    div()
+                                                        .px(ROW_PADDING)
+                                                        .pt_16()
+                                                        .text_color(Palette::text_secondary())
+                                                        .child("Nothing here yet. Add some movies or shows to your server."),
+                                                )
+                                            })
+                                            .into_any_element(),
+                                    ],
+                                ),
                             ),
                     ),
             )
