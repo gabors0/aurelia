@@ -7,6 +7,7 @@ pub mod button;
 pub mod cast;
 pub mod glass;
 pub mod hero;
+pub mod item_menu;
 pub mod logo;
 pub mod meta;
 pub mod pill;

@@ -9,6 +9,7 @@ mod runtime;
 mod session;
 mod state;
 mod theme;
+mod user_data;
 mod views;
 
 use gpui_kit::component::TitleBar;

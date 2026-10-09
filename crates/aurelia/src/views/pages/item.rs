@@ -28,6 +28,7 @@ use crate::playback::{self, TrackSelection, track_label};
 use crate::runtime;
 use crate::state::AppState;
 use crate::theme::{FONT_DISPLAY, Palette};
+use crate::user_data;
 use crate::views::shell::{self, NAV_HEIGHT};
 
 pub struct ItemPage {
@@ -39,7 +40,6 @@ pub struct ItemPage {
     scroll: ScrollHandle,
     rows: HashMap<&'static str, ScrollHandle>,
     _load: Option<Task<()>>,
-    _toggle: Option<Task<()>>,
     play_when_ready: bool,
 }
 
@@ -61,7 +61,6 @@ impl ItemPage {
             scroll: ScrollHandle::new(),
             rows: HashMap::new(),
             _load: None,
-            _toggle: None,
             play_when_ready: false,
         };
         this.refresh(window, cx);
@@ -122,63 +121,24 @@ impl ItemPage {
     }
 
     fn toggle_played(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(item) = self.item.ready_mut() else {
-            return;
-        };
-        let played = !item.is_played();
-        let data = item.user_data.get_or_insert_with(Default::default);
-        let previous = data.clone();
-        data.played = played;
-        if played {
-            data.playback_position_ticks = jellyfin::Ticks::ZERO;
-            data.played_percentage = None;
+        if let Some(item) = self.item.ready().cloned() {
+            user_data::set_played(&item, !item.is_played(), window, cx);
         }
-        cx.notify();
-        let client = AppState::client(cx);
-        let id = self.id.clone();
-        let request = runtime::api(cx, async move { client.set_played(&id, played).await });
-        self._toggle = Some(self.finish_toggle(request, previous, window, cx));
     }
 
     fn toggle_favorite(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(item) = self.item.ready_mut() else {
-            return;
-        };
-        let favorite = !item.is_favorite();
-        let data = item.user_data.get_or_insert_with(Default::default);
-        let previous = data.clone();
-        data.is_favorite = favorite;
-        cx.notify();
-        let client = AppState::client(cx);
-        let id = self.id.clone();
-        let request = runtime::api(cx, async move { client.set_favorite(&id, favorite).await });
-        self._toggle = Some(self.finish_toggle(request, previous, window, cx));
+        if let Some(item) = self.item.ready().cloned() {
+            user_data::set_favorite(&item, !item.is_favorite(), window, cx);
+        }
     }
 
-    /// Applies the server's answer, or rolls back the optimistic change.
-    fn finish_toggle(
-        &self,
-        request: impl std::future::Future<Output = jellyfin::Result<jellyfin::UserData>> + 'static,
-        previous: jellyfin::UserData,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Task<()> {
-        cx.spawn_in(window, async move |this, cx| {
-            let result = request.await;
-            this.update_in(cx, |this, window, cx| {
-                if let Some(item) = this.item.ready_mut() {
-                    match result {
-                        Ok(data) => item.user_data = Some(data),
-                        Err(err) => {
-                            item.user_data = Some(previous);
-                            shell::report_error(&err, window, cx);
-                        }
-                    }
-                }
-                cx.notify();
-            })
-            .ok();
-        })
+    pub fn patch_user_data(&mut self, id: &str, data: &jellyfin::UserData) -> bool {
+        let items = self
+            .item
+            .ready_mut()
+            .into_iter()
+            .chain(self.related.ready_mut().into_iter().flatten());
+        user_data::patch(items, id, data)
     }
 
     fn row_handle(&mut self, id: &'static str) -> ScrollHandle {
@@ -278,12 +238,7 @@ impl ItemPage {
                             .child(meta::badge_row(meta::badges(item))),
                     )
                     .when(!item.genres.is_empty(), |this| {
-                        this.child(
-                            div()
-                                .text_sm()
-                                .text_color(Palette::text_tertiary())
-                                .child(item.genres.join(" · ")),
-                        )
+                        this.child(meta::genre_links(&item.genres))
                     })
                     .when_some(item.overview.clone(), |this, overview| {
                         this.child(
@@ -470,9 +425,14 @@ impl ItemPage {
             .into_any_element()
     }
 
-    fn render_cast(&mut self, item: &BaseItem, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn render_cast(
+        &mut self,
+        item: &BaseItem,
+        accent: Hsla,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let handle = self.row_handle("cast");
-        crate::components::cast::cast_row(item, &handle, cx)
+        crate::components::cast::cast_row(item, &handle, accent, cx)
     }
 
     fn render_related(&mut self, item: &BaseItem, accent: Hsla) -> Option<AnyElement> {
@@ -599,7 +559,7 @@ impl Render for ItemPage {
             .into_any_element();
         let tracks = self.render_tracks(&item, cx);
         let details = self.render_details(&item);
-        let cast = self.render_cast(&item, cx);
+        let cast = self.render_cast(&item, accent, cx);
         let related = self.render_related(&item, accent);
 
         let below = vec![

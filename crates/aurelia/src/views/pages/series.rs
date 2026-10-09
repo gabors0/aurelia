@@ -18,6 +18,7 @@ use crate::components::art::Art;
 use crate::components::button::{glass_button, on_color, play_button, round_button};
 use crate::components::cast::cast_row;
 use crate::components::hero;
+use crate::components::item_menu;
 use crate::components::meta;
 use crate::components::pill::pill;
 use crate::components::progress;
@@ -30,6 +31,7 @@ use crate::playback::{self, TrackSelection};
 use crate::runtime;
 use crate::state::AppState;
 use crate::theme::Palette;
+use crate::user_data;
 use crate::views::shell::{self, NAV_HEIGHT};
 
 /// The season to open: the one asked for, else the one with the next
@@ -66,7 +68,6 @@ pub struct SeriesPage {
     /// One load per season, so switching seasons never cancels a load and
     /// leaves that season stuck on "Loading".
     episode_loads: HashMap<String, Task<()>>,
-    _toggle: Option<Task<()>>,
 }
 
 impl SeriesPage {
@@ -87,7 +88,6 @@ impl SeriesPage {
             cast: ScrollHandle::new(),
             _load: None,
             episode_loads: HashMap::new(),
-            _toggle: None,
         };
         this.refresh(window, cx);
         this
@@ -119,11 +119,18 @@ impl SeriesPage {
                         this.series = Loadable::Ready(series);
                         this.seasons = Loadable::Ready(seasons);
                         this.next_up = next_up;
-                        // Episodes may have changed (after playback): reload.
+                        // Episodes may have changed (after playback): reload
+                        // the open season, keeping it on screen meanwhile, and
+                        // the others when they're next opened.
+                        let shown = selected
+                            .as_ref()
+                            .and_then(|s| this.episodes.remove_entry(s));
                         this.episodes.clear();
                         this.episode_loads.clear();
+                        this.episodes.extend(shown);
                         if let Some(season) = selected {
-                            this.select_season(season, cx);
+                            this.selected = Some(season.clone());
+                            this.load_episodes(season, cx);
                         }
                     }
                     Err(err) => {
@@ -141,11 +148,17 @@ impl SeriesPage {
 
     fn select_season(&mut self, season: String, cx: &mut Context<Self>) {
         self.selected = Some(season.clone());
-        if self.episodes.contains_key(&season) {
-            cx.notify();
-            return;
+        if !self.episodes.contains_key(&season) {
+            self.load_episodes(season, cx);
         }
-        self.episodes.insert(season.clone(), Loadable::Loading);
+        cx.notify();
+    }
+
+    /// Fetches a season's episodes; what's shown stays until they arrive.
+    fn load_episodes(&mut self, season: String, cx: &mut Context<Self>) {
+        self.episodes
+            .entry(season.clone())
+            .or_insert(Loadable::Loading);
         let client = AppState::client(cx);
         let series = self.id.clone();
         let season_id = season.clone();
@@ -157,11 +170,19 @@ impl SeriesPage {
         let load = cx.spawn(async move |this, cx| {
             let result = fetch.await;
             this.update(cx, |this, cx| {
-                if let Err(err) = &result {
-                    shell::load_failed(err, cx);
-                }
                 this.episode_loads.remove(&season);
-                this.episodes.insert(season, Loadable::from_result(result));
+                match result {
+                    Ok(episodes) => {
+                        this.episodes.insert(season, Loadable::Ready(episodes));
+                    }
+                    Err(err) => {
+                        let message = shell::load_failed(&err, cx);
+                        let shown = this.episodes.get(&season).and_then(Loadable::ready);
+                        if shown.is_none() {
+                            this.episodes.insert(season, Loadable::Failed(message));
+                        }
+                    }
+                }
                 crate::dev::apply_initial_scroll(&this.scroll);
                 cx.notify();
             })
@@ -186,52 +207,31 @@ impl SeriesPage {
     }
 
     fn toggle(&mut self, favorite: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(series) = self.series.ready_mut() else {
+        let Some(series) = self.series.ready().cloned() else {
             return;
         };
-        let data = series.user_data.get_or_insert_with(Default::default);
-        let previous = data.clone();
-        let on = if favorite {
-            data.is_favorite = !data.is_favorite;
-            data.is_favorite
+        if favorite {
+            user_data::set_favorite(&series, !series.is_favorite(), window, cx);
         } else {
-            data.played = !data.played;
-            data.played
-        };
-        cx.notify();
-        let client = AppState::client(cx);
-        let id = self.id.clone();
-        let request = runtime::api(cx, async move {
-            if favorite {
-                client.set_favorite(&id, on).await
-            } else {
-                client.set_played(&id, on).await
-            }
-        });
-        self._toggle = Some(cx.spawn_in(window, async move |this, cx| {
-            let result = request.await;
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(data) => {
-                        if let Some(series) = this.series.ready_mut() {
-                            series.user_data = Some(data);
-                        }
-                        if !favorite {
-                            // Every episode changed; reload them and Next Up.
-                            this.refresh(window, cx);
-                        }
-                    }
-                    Err(err) => {
-                        if let Some(series) = this.series.ready_mut() {
-                            series.user_data = Some(previous);
-                        }
-                        shell::report_error(&err, window, cx);
-                    }
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
+            // Every episode changes too; the reload afterwards picks them up.
+            user_data::set_played(&series, !series.is_played(), window, cx);
+        }
+    }
+
+    pub fn patch_user_data(&mut self, id: &str, data: &jellyfin::UserData) -> bool {
+        let items = self
+            .series
+            .ready_mut()
+            .into_iter()
+            .chain(self.seasons.ready_mut().into_iter().flatten())
+            .chain(
+                self.episodes
+                    .values_mut()
+                    .filter_map(Loadable::ready_mut)
+                    .flatten(),
+            )
+            .chain(self.next_up.iter_mut());
+        user_data::patch(items, id, data)
     }
 
     fn render_hero(&self, series: &BaseItem, accent: Hsla, cx: &mut Context<Self>) -> AnyElement {
@@ -248,14 +248,7 @@ impl SeriesPage {
             None => "Play".into(),
         };
         let next_title = self.next_up.as_ref().map(|next| next.name.clone());
-        let mut facts = meta::facts(series);
-        facts.extend(
-            series
-                .genres
-                .iter()
-                .take(3)
-                .map(|g| SharedString::from(g.clone())),
-        );
+        let facts = meta::facts(series);
 
         div()
             .relative()
@@ -275,6 +268,9 @@ impl SeriesPage {
                     .gap_4()
                     .child(hero::title(&client, series, "series-logo", px(150.)))
                     .child(meta::line(facts))
+                    .when(!series.genres.is_empty(), |this| {
+                        this.child(meta::genre_links(&series.genres))
+                    })
                     .when_some(series.overview.clone(), |this, overview| {
                         this.child(
                             div()
@@ -468,7 +464,7 @@ fn episode_row(
     let progress = episode.progress();
     let played = episode.is_played() && progress.is_none();
 
-    h_flex()
+    let row = h_flex()
         .id(group.clone())
         .group(group.clone())
         .items_start()
@@ -605,8 +601,8 @@ fn episode_row(
                             .child(overview),
                     )
                 }),
-        )
-        .into_any_element()
+        );
+    item_menu::attach(row, episode.clone()).into_any_element()
 }
 
 impl Render for SeriesPage {
@@ -642,7 +638,7 @@ impl Render for SeriesPage {
         let hero = self.render_hero(&series, accent, cx);
         let seasons = self.render_seasons(cx);
         let episodes = self.render_episodes(accent, &client);
-        let cast = cast_row(&series, &self.cast, cx);
+        let cast = cast_row(&series, &self.cast, accent, cx);
 
         let below = vec![
             v_flex()

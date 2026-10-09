@@ -1,5 +1,5 @@
 //! Home: a hero carousel of what to watch, then shelves of Continue Watching,
-//! Next Up and the latest additions to every library.
+//! Next Up, Favourites and the latest additions to every library.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -13,7 +13,7 @@ use gpui_kit::{
     Animation, AnimationExt as _, AnyElement, Context, ElementId, FontWeight, Hsla, ScrollHandle,
     SharedString, Task, Window, div, hsla, px, rgba,
 };
-use jellyfin::{BaseItem, ItemKind, ItemsQuery, SortBy, UserView};
+use jellyfin::{BaseItem, ItemFilter, ItemKind, ItemsQuery, SortBy, UserData, UserView};
 
 use super::carousel::{self, Carousel};
 use crate::components::button::{glass_button, play_button};
@@ -34,10 +34,12 @@ const HERO_RANDOM: usize = 4;
 /// Random candidates fetched so enough of them have backdrop art.
 const HERO_RANDOM_POOL: u32 = 30;
 const HERO_HEIGHT: f32 = 0.72;
+const FAVORITES: u32 = 24;
 
 pub struct HomePage {
     resume: Loadable<Vec<BaseItem>>,
     next_up: Loadable<Vec<BaseItem>>,
+    favorites: Loadable<Vec<BaseItem>>,
     latest: Vec<(UserView, Loadable<Vec<BaseItem>>)>,
     /// Random movies and shows for the hero; kept across refreshes so slides
     /// don't change under the user, re-rolled by the refresh button.
@@ -72,6 +74,7 @@ impl HomePage {
         let mut this = Self {
             resume: Loadable::Loading,
             next_up: Loadable::Loading,
+            favorites: Loadable::Loading,
             latest: Vec::new(),
             random: Vec::new(),
             hero: Vec::new(),
@@ -116,6 +119,17 @@ impl HomePage {
         let c = client.clone();
         let next_up = runtime::api(cx, async move { c.next_up(None, 16, false).await });
         let c = client.clone();
+        let favorites = runtime::api(cx, async move {
+            c.items(&ItemsQuery {
+                include_item_types: vec![ItemKind::Movie, ItemKind::Series],
+                filter: ItemFilter::Favorites,
+                limit: FAVORITES,
+                ..ItemsQuery::default()
+            })
+            .await
+            .map(|page| page.items)
+        });
+        let c = client.clone();
         let random = (reshuffle || self.random.is_empty()).then(|| {
             runtime::api(cx, async move {
                 c.items(&ItemsQuery {
@@ -139,6 +153,7 @@ impl HomePage {
         self._load = Some(cx.spawn(async move |this, cx| {
             let resume = resume.await;
             let next_up = next_up.await;
+            let favorites = favorites.await;
             // Only decoration: if it fails, keep the slides we have.
             let random = match random {
                 Some(fetch) => fetch.await.ok().map(|page| page.items),
@@ -157,6 +172,7 @@ impl HomePage {
                 }
                 this.resume = loadable(resume);
                 this.next_up = loadable(next_up);
+                this.favorites = loadable(favorites);
                 this.latest = views
                     .into_iter()
                     .zip(latest_results)
@@ -219,6 +235,18 @@ impl HomePage {
 
     pub fn scroll_handle(&self) -> &ScrollHandle {
         &self.scroll
+    }
+
+    pub fn patch_user_data(&mut self, id: &str, data: &UserData) -> bool {
+        let shelves = [&mut self.resume, &mut self.next_up, &mut self.favorites]
+            .into_iter()
+            .chain(self.latest.iter_mut().map(|(_, items)| items))
+            .filter_map(Loadable::ready_mut)
+            .flatten();
+        let items = shelves
+            .chain(self.random.iter_mut())
+            .chain(self.hero.iter_mut());
+        crate::user_data::patch(items, id, data)
     }
 
     fn row_handle(&mut self, id: &str) -> ScrollHandle {
@@ -454,6 +482,16 @@ impl HomePage {
                 "Next Up".into(),
                 self.next_up.clone(),
                 true,
+            ),
+            (
+                "favorites".to_string(),
+                "Favourites".into(),
+                // Many people have none: no placeholder shelf while loading.
+                match &self.favorites {
+                    Loadable::Loading => Loadable::Ready(Vec::new()),
+                    favorites => favorites.clone(),
+                },
+                false,
             ),
         ]
         .into_iter()

@@ -9,6 +9,7 @@ use gpui_kit::{
 use jellyfin::{BaseItem, ItemKind};
 
 use crate::components::art::Art;
+use crate::components::item_menu;
 use crate::components::progress;
 use crate::format;
 use crate::images::ImageRequest;
@@ -134,7 +135,7 @@ impl RenderOnce for PosterCard {
         let accent = self.accent;
         let route = Route::for_item(&self.item);
 
-        div()
+        let card = div()
             .id(group.clone())
             .group(group.clone())
             .flex()
@@ -276,7 +277,8 @@ impl RenderOnce for PosterCard {
                                 .child(subtitle),
                         )
                     }),
-            )
+            );
+        item_menu::attach(card, self.item)
     }
 }
 

@@ -17,6 +17,19 @@ pub enum Route {
         id: String,
         season_id: Option<String>,
     },
+    /// A collection (BoxSet) and its titles.
+    Collection {
+        id: String,
+    },
+    /// An actor, director or writer and what they're in.
+    Person {
+        id: String,
+    },
+    /// Every movie and show in a genre.
+    Genre {
+        name: String,
+    },
+    Search,
 }
 
 impl Route {
@@ -31,6 +44,15 @@ impl Route {
             ItemKind::Season => Route::Series {
                 id: item.series_id.clone().unwrap_or_else(|| item.id.clone()),
                 season_id: Some(item.id.clone()),
+            },
+            ItemKind::BoxSet => Route::Collection {
+                id: item.id.clone(),
+            },
+            ItemKind::Person => Route::Person {
+                id: item.id.clone(),
+            },
+            ItemKind::Genre => Route::Genre {
+                name: item.name.clone(),
             },
             _ => Route::Item {
                 id: item.id.clone(),
@@ -172,6 +194,28 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(Route::for_item(&movie), Route::Item { id: "m".into() });
+    }
+
+    #[test]
+    fn collections_people_and_genres_have_their_own_pages() {
+        let item = |kind: &str| -> jellyfin::BaseItem {
+            serde_json::from_value(serde_json::json!({"Id": "x", "Name": "Horror", "Type": kind}))
+                .unwrap()
+        };
+        assert_eq!(
+            Route::for_item(&item("BoxSet")),
+            Route::Collection { id: "x".into() }
+        );
+        assert_eq!(
+            Route::for_item(&item("Person")),
+            Route::Person { id: "x".into() }
+        );
+        assert_eq!(
+            Route::for_item(&item("Genre")),
+            Route::Genre {
+                name: "Horror".into()
+            }
+        );
     }
 
     #[test]

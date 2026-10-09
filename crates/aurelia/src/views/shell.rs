@@ -40,7 +40,8 @@ actions!(
         Quit,
         PlayCurrent,
         PreviousSlide,
-        NextSlide
+        NextSlide,
+        Search
     ]
 );
 
@@ -54,6 +55,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", PlayCurrent, Some(CONTEXT)),
         KeyBinding::new("left", PreviousSlide, Some(CONTEXT)),
         KeyBinding::new("right", NextSlide, Some(CONTEXT)),
+        KeyBinding::new("ctrl-f", Search, Some(CONTEXT)),
         KeyBinding::new("ctrl-q", Quit, None),
     ]);
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -83,15 +85,32 @@ pub fn navigate(route: Route, window: &mut Window, cx: &mut App) {
     with_shell(cx, |shell, cx| shell.navigate(route, window, cx));
 }
 
+/// Every page in the history, oldest first.
+fn pages(cx: &App) -> Vec<Page> {
+    match cx.try_global::<ShellHandle>().and_then(|h| h.0.upgrade()) {
+        Some(shell) => shell.read(cx).nav.pages().cloned().collect(),
+        None => Vec::new(),
+    }
+}
+
 /// Reloads every page in the history (e.g. after playback changed progress).
 pub fn refresh_all(window: &mut Window, cx: &mut App) {
-    let pages: Vec<Page> = match cx.try_global::<ShellHandle>().and_then(|h| h.0.upgrade()) {
-        Some(shell) => shell.read(cx).nav.pages().cloned().collect(),
-        None => return,
-    };
-    for page in pages {
+    for page in pages(cx) {
         page.refresh(window, cx);
     }
+}
+
+/// Shows an item's new watched/favourite state wherever it's on screen.
+///
+/// Deferred: the caller may be one of those pages (a button's listener runs
+/// inside its page's update), and GPUI can't update an entity re-entrantly.
+pub fn patch_user_data(id: &str, data: &jellyfin::UserData, cx: &mut App) {
+    let (id, data) = (id.to_string(), data.clone());
+    cx.defer(move |cx| {
+        for page in pages(cx) {
+            page.patch_user_data(&id, &data, cx);
+        }
+    });
 }
 
 /// Shows a failed action to the user; an expired session signs out.
@@ -123,8 +142,9 @@ pub fn session_expired(cx: &mut App) {
     with_shell(cx, |_, cx| cx.emit(ShellEvent::SessionExpired));
 }
 
-/// Development: `AURELIA_ROUTE=item:<id>|series:<id>|library:<id>` opens a
-/// page at startup (for screenshots).
+/// Development: `AURELIA_ROUTE=item:<id>|series:<id>|library:<id>|
+/// collection:<id>|person:<id>|genre:<name>|search:<query>` opens a page at
+/// startup (for screenshots).
 fn dev_start_route() -> Option<Route> {
     let value = std::env::var("AURELIA_ROUTE").ok()?;
     let (kind, id) = value.split_once(':')?;
@@ -139,8 +159,19 @@ fn dev_start_route() -> Option<Route> {
             name: String::new(),
             id,
         },
+        "collection" => Route::Collection { id },
+        "person" => Route::Person { id },
+        "genre" => Route::Genre { name: id },
+        "search" => Route::Search,
         _ => return None,
     })
+}
+
+/// The query for `AURELIA_ROUTE=search:<query>`.
+fn dev_search_query() -> Option<String> {
+    let value = std::env::var("AURELIA_ROUTE").ok()?;
+    let query = value.strip_prefix("search:")?;
+    (!query.is_empty()).then(|| query.to_string())
 }
 
 pub struct Shell {
@@ -182,6 +213,9 @@ impl Shell {
         };
         if let Some(route) = dev_start_route() {
             this.navigate(route, window, cx);
+            if let (Page::Search(page), Some(query)) = (this.nav.page(), dev_search_query()) {
+                page.update(cx, |page, cx| page.set_query(&query, window, cx));
+            }
         }
         this
     }
@@ -192,21 +226,37 @@ impl Shell {
         }
         let page = Page::for_route(&route, window, cx);
         self.nav.push(route, page);
-        window.focus(&self.focus, cx);
+        self.focus_page(window, cx);
         cx.notify();
+    }
+
+    /// Keys go to the page's own field (Search) or else the shell.
+    fn focus_page(&self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.nav.page().focus_handle(cx) {
+            Some(handle) => window.focus(&handle, cx),
+            None => window.focus(&self.focus, cx),
+        }
     }
 
     fn back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav.back() {
-            window.focus(&self.focus, cx);
+            self.focus_page(window, cx);
             cx.notify();
         }
     }
 
     fn forward(&mut self, _: &Forward, window: &mut Window, cx: &mut Context<Self>) {
         if self.nav.forward() {
-            window.focus(&self.focus, cx);
+            self.focus_page(window, cx);
             cx.notify();
+        }
+    }
+
+    fn search(&mut self, _: &Search, window: &mut Window, cx: &mut Context<Self>) {
+        if self.nav.route() == &Route::Search {
+            self.focus_page(window, cx);
+        } else {
+            self.navigate(Route::Search, window, cx);
         }
     }
 
@@ -238,6 +288,33 @@ impl Shell {
             page.refresh(window, cx);
         }
         cx.notify();
+    }
+
+    fn render_search(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.nav.route() == &Route::Search;
+        div()
+            .id("search")
+            .size_8()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .cursor_pointer()
+            .when(active, |this| this.bg(Palette::glass_strong()))
+            .hover(|this| this.bg(Palette::glass_strong()))
+            .tooltip(|window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new("Search (Ctrl+F)").build(window, cx)
+            })
+            .on_click(cx.listener(|this, _, window, cx| this.search(&Search, window, cx)))
+            .child(
+                gpui_kit::component::Icon::new(icon::Search)
+                    .size_4()
+                    .text_color(if active {
+                        Palette::text()
+                    } else {
+                        Palette::text_secondary()
+                    }),
+            )
     }
 
     fn render_refresh(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -309,7 +386,7 @@ impl Shell {
         let views: Vec<_> = state
             .views()
             .iter()
-            .filter(|view| view.is_video_library())
+            .filter(|view| view.is_video_library() || view.is_collections())
             .cloned()
             .collect();
         let (user, server) = state
@@ -390,6 +467,7 @@ impl Shell {
                         .child(
                             h_flex()
                                 .gap_2()
+                                .child(self.render_search(cx))
                                 .child(self.render_refresh(cx))
                                 .child(account_button(user, server)),
                         ),
@@ -450,6 +528,7 @@ impl Render for Shell {
             .on_action(cx.listener(Self::play_current))
             .on_action(cx.listener(Self::previous_slide))
             .on_action(cx.listener(Self::next_slide))
+            .on_action(cx.listener(Self::search))
             .on_mouse_down(
                 MouseButton::Navigate(NavigationDirection::Back),
                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),

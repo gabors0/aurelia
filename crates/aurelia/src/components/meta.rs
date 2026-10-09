@@ -5,7 +5,9 @@ use gpui_kit::{AnyElement, FontWeight, SharedString, div, px};
 use jellyfin::{BaseItem, ItemKind, StreamKind};
 
 use crate::format;
+use crate::nav::Route;
 use crate::theme::Palette;
+use crate::views::shell;
 
 /// Plain-text facts about an item, in display order.
 pub fn facts(item: &BaseItem) -> Vec<SharedString> {
@@ -118,6 +120,35 @@ pub fn line(facts: Vec<SharedString>) -> impl IntoElement {
         row = row.child(fact);
     }
     row
+}
+
+/// "Horror · Thriller", each genre a link to its page.
+pub fn genre_links(genres: &[String]) -> AnyElement {
+    let mut row = div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x_2()
+        .text_sm()
+        .text_color(Palette::text_tertiary());
+    for (i, genre) in genres.iter().enumerate() {
+        if i > 0 {
+            row = row.child("·");
+        }
+        let route = Route::Genre {
+            name: genre.clone(),
+        };
+        row = row.child(
+            div()
+                .id(SharedString::from(format!("genre-{genre}")))
+                .cursor_pointer()
+                .text_color(Palette::text_secondary())
+                .hover(|this| this.text_color(Palette::text()).underline())
+                .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
+                .child(genre.clone()),
+        );
+    }
+    row.into_any_element()
 }
 
 pub fn badge_row(badges: Vec<SharedString>) -> AnyElement {

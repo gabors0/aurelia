@@ -17,10 +17,19 @@ progress kept in sync with the server.
 
 - **Home**: a hero slideshow of what you're watching and what's new (advances
   every 8 s, pauses while you point at it, with arrows and ←/→), then
-  Continue Watching, Next Up and the latest additions to every library.
+  Continue Watching, Next Up, your Favourites and the latest additions to every
+  library.
 - **Libraries**: a virtualised poster grid for libraries of any size, sorted by
-  name, date added, release date or rating, and filtered to unwatched or
-  favourites.
+  name, date added, release date or rating, and filtered by genre, unwatched or
+  favourites. Collections get their own tab when you have any.
+- **Search**: results as you type, in shelves of movies, shows, collections,
+  people and episodes. Before you type, every genre is a tile to browse.
+- **People, collections and genres**: cast headshots open a person's page
+  (biography and everything they're in), collections open a page with their
+  titles in release order, and genres link to a grid of everything in them.
+- **Right-click menus** on every poster, episode and shelf card: play or resume,
+  start over, mark watched or unwatched, favourite, and jump to the show or
+  season. Changes show everywhere at once.
 - **Movies and episodes**: full-bleed artwork, title logos, quality badges (4K,
   HDR, Dolby Vision, Atmos), cast, and related titles. Resume or start over,
   choose audio and subtitle tracks, and mark items watched or favourite.
@@ -59,7 +68,8 @@ Aurelia needs `mpv` on `PATH`, or set `AURELIA_MPV=/path/to/mpv`.
 
 | Key | Action |
 |---|---|
-| `Enter` | Play the movie, episode or show on screen |
+| `Ctrl+F` or the 🔍 button | Search (`Esc` clears it, then goes back) |
+| `Enter` | Play the movie, episode, show or collection on screen |
 | `←` / `→` | Previous / next slide on Home |
 | `Esc`, `Alt+←`, mouse back | Back |
 | `Alt+→`, mouse forward | Forward |
