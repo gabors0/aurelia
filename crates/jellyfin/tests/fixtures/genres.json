@@ -1,0 +1,146 @@
+{
+  "Items": [
+    {
+      "Name": "Action",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "ce06903d834d2c3417e0889dd4049f3b",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 1,
+      "ImageTags": {
+        "Primary": "4bdf8f5be077160081e715f4d83f489f"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "4bdf8f5be077160081e715f4d83f489f": "eJK_2kRjfQIo?bxafQfQfQWBfQfQfQfQfQxaayfQfQWB~Wj[fQj[4."
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 1,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Adventure",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "51cec9645b896084d12b259acd05ccb1",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 3,
+      "ImageTags": {
+        "Primary": "da9c83f42e63ff52cc34e984ee34207c"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "da9c83f42e63ff52cc34e984ee34207c": "eCHeUX%jI:n2%gDg00t8xaX89iW7fio#f+9$xAjFXSx[ROsXn%NGM_"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 3,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Animation",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "074229225b7254292f131f9f49f8dcd6",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 3,
+      "ImageTags": {
+        "Primary": "30bb125693d6ada6e8bc0bbfaeb1a379"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "30bb125693d6ada6e8bc0bbfaeb1a379": "eOL|ln$*t6JCX8T{ZhWES$oLMd-nWXNHjFuP%zoyM|i_Xj%2j[V?WB"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 3,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Comedy",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "08d31605d366d63a7a924f944b4417f1",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 3,
+      "ImageTags": {
+        "Primary": "d5763c3348fd1f356561f367775f58ef"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "d5763c3348fd1f356561f367775f58ef": "edMG@kTKbFbIbatRt7oyWBax%LXTofjZfkysRkafofnjSzIoafsmaz"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 3,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    },
+    {
+      "Name": "Crime",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "83a9dab21914792744c8fb23b9925dc6",
+      "ChannelId": null,
+      "Type": "Genre",
+      "ChildCount": 2,
+      "ImageTags": {
+        "Primary": "aa994c7bf0c3c05f1e8f02799c162203"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "aa994c7bf0c3c05f1e8f02799c162203": "eNMjdYxufQ%M?v9$RjfQM{nh$jRPfQITE2xTxvfQ-;xu_4RjfQM{D%"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown",
+      "TrailerCount": 0,
+      "MovieCount": 2,
+      "SeriesCount": 0,
+      "ProgramCount": 0,
+      "EpisodeCount": 0,
+      "SongCount": 0,
+      "AlbumCount": 0,
+      "ArtistCount": 0,
+      "MusicVideoCount": 0
+    }
+  ],
+  "TotalRecordCount": 0,
+  "StartIndex": 0
+}

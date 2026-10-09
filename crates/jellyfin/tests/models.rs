@@ -13,6 +13,21 @@ fn fixture<T: DeserializeOwned>(name: &str) -> T {
 }
 
 #[test]
+fn person_details() {
+    let person: BaseItem = fixture("item_person.json");
+    assert_eq!(person.kind, ItemKind::Person);
+    assert!(person.overview.is_some());
+    assert_eq!(
+        person.premiere_date.as_deref().map(|d| &d[..4]),
+        Some("1945")
+    );
+    assert_eq!(
+        person.production_locations,
+        vec!["Pittsburgh, Pennsylvania, USA".to_string()]
+    );
+}
+
+#[test]
 fn deserializes_fixtures() {
     let info: PublicSystemInfo = fixture("public_info.json");
     assert_eq!(info.server_name, "Stable Demo");

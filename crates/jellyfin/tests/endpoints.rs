@@ -3,7 +3,7 @@ use jellyfin::{
     PlaybackReport, ProgressEvent, SortBy, SortOrder, Ticks,
 };
 use serde_json::json;
-use wiremock::matchers::{body_partial_json, method, path, query_param};
+use wiremock::matchers::{body_partial_json, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn fixture(name: &str) -> String {
@@ -67,9 +67,106 @@ async fn items_query_encodes_params() {
         filter: ItemFilter::Unplayed,
         start_index: 100,
         limit: 50,
+        ..Default::default()
     };
     let page = client(&server.uri()).items(&query).await.unwrap();
     assert_eq!(page.total_record_count, 11);
+}
+
+#[tokio::test]
+async fn items_query_encodes_search_genres_and_people() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Items"))
+        .and(query_param("searchTerm", "night of"))
+        .and(query_param("genres", "Horror|Sci-Fi & Fantasy"))
+        .and(query_param("personIds", "p1,p2"))
+        .and(query_param("recursive", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("items_movies.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let query = ItemsQuery {
+        search_term: Some("  night of ".into()),
+        genres: vec!["Horror".into(), "Sci-Fi & Fantasy".into()],
+        person_ids: vec!["p1".into(), "p2".into()],
+        ..Default::default()
+    };
+    client(&server.uri()).items(&query).await.unwrap();
+}
+
+#[tokio::test]
+async fn collection_titles_are_not_recursive() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Items"))
+        .and(query_param("parentId", "boxset1"))
+        .and(query_param("recursive", "false"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("items_movies.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let query = ItemsQuery {
+        parent_id: Some("boxset1".into()),
+        recursive: false,
+        ..Default::default()
+    };
+    client(&server.uri()).items(&query).await.unwrap();
+}
+
+#[tokio::test]
+async fn blank_search_term_is_left_out() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Items"))
+        .and(query_param_is_missing("searchTerm"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("items_movies.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let query = ItemsQuery {
+        search_term: Some("   ".into()),
+        ..Default::default()
+    };
+    client(&server.uri()).items(&query).await.unwrap();
+}
+
+#[tokio::test]
+async fn persons_search() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Persons"))
+        .and(query_param("userId", "user1"))
+        .and(query_param("searchTerm", "chris"))
+        .and(query_param("limit", "12"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("persons.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let people = client(&server.uri()).persons("chris ", 12).await.unwrap();
+    assert_eq!(people[0].kind, ItemKind::Person);
+    assert!(people[0].primary_image().is_some());
+}
+
+#[tokio::test]
+async fn genres_for_a_library() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Genres"))
+        .and(query_param("parentId", "lib1"))
+        .and(query_param("includeItemTypes", "Movie,Series"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("genres.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let genres = client(&server.uri())
+        .genres(Some("lib1"), &[ItemKind::Movie, ItemKind::Series])
+        .await
+        .unwrap();
+    assert_eq!(genres[0].name, "Action");
+    assert_eq!(genres[0].kind, ItemKind::Genre);
+    assert_eq!(genres[0].movie_count, Some(1));
+    assert_eq!(genres[0].series_count, Some(0));
 }
 
 #[tokio::test]

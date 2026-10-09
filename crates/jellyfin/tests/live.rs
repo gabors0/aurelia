@@ -52,6 +52,41 @@ async fn live_demo_smoke() {
     assert!(!playback.play_session_id.is_empty());
     client.similar(&series.id, 6).await.unwrap();
 
+    let genres = client
+        .genres(None, &[ItemKind::Movie, ItemKind::Series])
+        .await
+        .unwrap();
+    assert!(!genres.is_empty());
+    let in_genre = client
+        .items(&ItemsQuery {
+            include_item_types: vec![ItemKind::Movie, ItemKind::Series],
+            genres: vec![genres[0].name.clone()],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(in_genre.total_record_count > 0);
+    let found = client
+        .items(&ItemsQuery {
+            search_term: Some(series.name.clone()),
+            include_item_types: vec![ItemKind::Series],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(found.items.iter().any(|i| i.id == series.id));
+    if let Some(person) = detail.people.first() {
+        client.persons(&person.name, 5).await.unwrap();
+        let credits = client
+            .items(&ItemsQuery {
+                person_ids: vec![person.id.clone()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(credits.total_record_count > 0);
+    }
+
     // Images resolve without auth.
     let backdrop = detail.backdrop_image().expect("series has a backdrop");
     let response = reqwest::get(client.image_url(&backdrop, 640))

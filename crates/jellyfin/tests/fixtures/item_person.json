@@ -1,0 +1,78 @@
+{
+  "Name": "Judith O'Dea",
+  "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+  "Id": "a269870e3a7f5bdc0d090aed3caadbdd",
+  "Etag": "770adb27b58b171267043d99dc7e52b9",
+  "DateCreated": "2025-10-25T20:50:27.8082256Z",
+  "CanDelete": false,
+  "CanDownload": false,
+  "SortName": "Judith O'Dea",
+  "PremiereDate": "1945-04-20T00:00:00.0000000Z",
+  "ExternalUrls": [
+    {
+      "Name": "IMDb",
+      "Url": "https://www.imdb.com/name/nm0640621"
+    },
+    {
+      "Name": "TMDB",
+      "Url": "https://www.themoviedb.org/person/97913"
+    }
+  ],
+  "ProductionLocations": [
+    "Pittsburgh, Pennsylvania, USA"
+  ],
+  "Path": "/config/metadata/People/J/Judith O'Dea",
+  "EnableMediaSourceDisplay": true,
+  "ChannelId": null,
+  "Overview": "Judith O'Dea (born April 20, 1945) is an American actress known for her role as Barbra in the George A. Romero film Night of the Living Dead (1968).\n\nDescription above from the Wikipedia article Judith O'Dea, licensed under CC-BY-SA, full list of contributors on Wikipedia.",
+  "Taglines": [],
+  "Genres": [],
+  "PlayAccess": "Full",
+  "RemoteTrailers": [],
+  "ProviderIds": {
+    "Imdb": "nm0640621",
+    "Tmdb": "97913"
+  },
+  "ParentId": null,
+  "Type": "Person",
+  "People": [],
+  "Studios": [],
+  "GenreItems": [],
+  "LocalTrailerCount": 0,
+  "UserData": {
+    "PlaybackPositionTicks": 0,
+    "PlayCount": 0,
+    "IsFavorite": false,
+    "Played": false,
+    "Key": "Person-Judith O'Dea",
+    "ItemId": "a269870e3a7f5bdc0d090aed3caadbdd"
+  },
+  "ChildCount": 1,
+  "SpecialFeatureCount": 0,
+  "DisplayPreferencesId": "b607178b0ac2f604a458d3d2363fdc83",
+  "Tags": [],
+  "PrimaryImageAspectRatio": 0.6674641148325359,
+  "ImageTags": {
+    "Primary": "5d1fa405e111f9fb1ef224b2b3480a0a"
+  },
+  "BackdropImageTags": [],
+  "ImageBlurHashes": {
+    "Primary": {
+      "5d1fa405e111f9fb1ef224b2b3480a0a": "dVE-s}NH0zj[={bHNGbH0zs:-UkCI;aeoMjZt7R*oLoe"
+    }
+  },
+  "Chapters": [],
+  "LocationType": "FileSystem",
+  "MediaType": "Unknown",
+  "LockedFields": [],
+  "TrailerCount": 0,
+  "MovieCount": 1,
+  "SeriesCount": 0,
+  "ProgramCount": 0,
+  "EpisodeCount": 0,
+  "SongCount": 0,
+  "AlbumCount": 0,
+  "ArtistCount": 0,
+  "MusicVideoCount": 0,
+  "LockData": false
+}

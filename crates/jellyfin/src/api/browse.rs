@@ -44,7 +44,16 @@ pub enum ItemFilter {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItemsQuery {
     pub parent_id: Option<String>,
+    /// Search the whole tree under `parent_id`; a collection's own titles
+    /// need `false`.
+    pub recursive: bool,
     pub include_item_types: Vec<ItemKind>,
+    /// Matches names (as you type).
+    pub search_term: Option<String>,
+    /// Genre names; an item matches any of them.
+    pub genres: Vec<String>,
+    /// Items these people appear in (cast or crew).
+    pub person_ids: Vec<String>,
     pub sort_by: SortBy,
     pub sort_order: SortOrder,
     pub filter: ItemFilter,
@@ -56,7 +65,11 @@ impl Default for ItemsQuery {
     fn default() -> Self {
         Self {
             parent_id: None,
+            recursive: true,
             include_item_types: Vec::new(),
+            search_term: None,
+            genres: Vec::new(),
+            person_ids: Vec::new(),
             sort_by: SortBy::Name,
             sort_order: SortOrder::Ascending,
             filter: ItemFilter::All,
@@ -64,6 +77,14 @@ impl Default for ItemsQuery {
             limit: 100,
         }
     }
+}
+
+fn join_kinds(kinds: &[ItemKind]) -> String {
+    kinds
+        .iter()
+        .map(|k| k.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 impl Client {
@@ -124,17 +145,26 @@ impl Client {
 
     pub async fn items(&self, items_query: &ItemsQuery) -> Result<ItemsPage<BaseItem>> {
         let mut query = self.user_query()?;
-        query.push(("recursive", "true".to_string()));
+        query.push(("recursive", items_query.recursive.to_string()));
         if let Some(parent) = &items_query.parent_id {
             query.push(("parentId", parent.clone()));
         }
         if !items_query.include_item_types.is_empty() {
-            let kinds: Vec<&str> = items_query
-                .include_item_types
-                .iter()
-                .map(|k| k.as_str())
-                .collect();
-            query.push(("includeItemTypes", kinds.join(",")));
+            query.push((
+                "includeItemTypes",
+                join_kinds(&items_query.include_item_types),
+            ));
+        }
+        if let Some(term) = items_query.search_term.as_deref().map(str::trim)
+            && !term.is_empty()
+        {
+            query.push(("searchTerm", term.to_string()));
+        }
+        if !items_query.genres.is_empty() {
+            query.push(("genres", items_query.genres.join("|")));
+        }
+        if !items_query.person_ids.is_empty() {
+            query.push(("personIds", items_query.person_ids.join(",")));
         }
         query.push(("sortBy", items_query.sort_by.param().to_string()));
         let order = match items_query.sort_order {
@@ -180,6 +210,42 @@ impl Client {
         let page: ItemsPage<BaseItem> = self
             .get_json(&format!("Shows/{series_id}/Episodes"), &query)
             .await?;
+        Ok(page.items)
+    }
+
+    /// People (cast and crew) whose names match `search_term`.
+    pub async fn persons(&self, search_term: &str, limit: u32) -> Result<Vec<BaseItem>> {
+        let mut query = self.user_query()?;
+        query.extend([
+            ("searchTerm", search_term.trim().to_string()),
+            ("limit", limit.to_string()),
+            ("fields", "PrimaryImageAspectRatio".to_string()),
+            ("enableTotalRecordCount", "false".to_string()),
+        ]);
+        let page: ItemsPage<BaseItem> = self.get_json("Persons", &query).await?;
+        Ok(page.items)
+    }
+
+    /// Genres used by `kinds` of items, in one library or (without
+    /// `parent_id`) all of them.
+    pub async fn genres(
+        &self,
+        parent_id: Option<&str>,
+        kinds: &[ItemKind],
+    ) -> Result<Vec<BaseItem>> {
+        let mut query = self.user_query()?;
+        query.extend([
+            ("recursive", "true".to_string()),
+            ("sortBy", "SortName".to_string()),
+            ("enableTotalRecordCount", "false".to_string()),
+        ]);
+        if let Some(parent) = parent_id {
+            query.push(("parentId", parent.to_string()));
+        }
+        if !kinds.is_empty() {
+            query.push(("includeItemTypes", join_kinds(kinds)));
+        }
+        let page: ItemsPage<BaseItem> = self.get_json("Genres", &query).await?;
         Ok(page.items)
     }
 

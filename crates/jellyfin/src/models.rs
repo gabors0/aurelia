@@ -61,6 +61,11 @@ impl UserView {
             None | Some("movies" | "tvshows" | "homevideos" | "mixed")
         )
     }
+
+    /// The Collections library (BoxSets).
+    pub fn is_collections(&self) -> bool {
+        self.collection_type.as_deref() == Some("boxsets")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,6 +91,7 @@ pub enum ItemKind {
     Video,
     Trailer,
     Person,
+    Genre,
     #[default]
     #[serde(other)]
     Other,
@@ -104,6 +110,7 @@ impl ItemKind {
             ItemKind::Video => "Video",
             ItemKind::Trailer => "Trailer",
             ItemKind::Person => "Person",
+            ItemKind::Genre => "Genre",
             ItemKind::Other => "",
         }
     }
@@ -135,8 +142,14 @@ pub struct BaseItem {
     pub official_rating: Option<String>,
     #[serde(deserialize_with = "nullable")]
     pub genres: Vec<String>,
+    /// The same genres with their ids.
+    #[serde(deserialize_with = "nullable")]
+    pub genre_items: Vec<NameId>,
     #[serde(deserialize_with = "nullable")]
     pub studios: Vec<NameId>,
+    /// For people: where they were born.
+    #[serde(deserialize_with = "nullable")]
+    pub production_locations: Vec<String>,
 
     #[serde(deserialize_with = "nullable")]
     pub image_tags: HashMap<String, String>,
@@ -165,6 +178,9 @@ pub struct BaseItem {
     pub index_number_end: Option<i32>,
     pub parent_index_number: Option<i32>,
     pub child_count: Option<i32>,
+    /// For genres: how many movies and shows use it.
+    pub movie_count: Option<i32>,
+    pub series_count: Option<i32>,
 
     pub user_data: Option<UserData>,
     #[serde(deserialize_with = "nullable")]

@@ -1,0 +1,33 @@
+{
+  "Items": [
+    {
+      "Name": "Chris Gampel",
+      "ServerId": "f0b3381645f04afb9a0e392e74b6a1b0",
+      "Id": "7ae1d60a76f1a516c939c9ee54ac2de2",
+      "ChannelId": null,
+      "Type": "Person",
+      "UserData": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 0,
+        "IsFavorite": false,
+        "Played": false,
+        "Key": "Person-Chris Gampel",
+        "ItemId": "7ae1d60a76f1a516c939c9ee54ac2de2"
+      },
+      "PrimaryImageAspectRatio": 0.6670687575392038,
+      "ImageTags": {
+        "Primary": "0e5f696dbd00f9468852708816f53477"
+      },
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {
+        "Primary": {
+          "0e5f696dbd00f9468852708816f53477": "dRE-|A~Dx]gN}[r?s=W-x]ay%2xb-=oLR%R%%2RjR+kB"
+        }
+      },
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

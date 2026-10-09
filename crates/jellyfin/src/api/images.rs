@@ -20,15 +20,27 @@ impl Client {
         url
     }
 
-    /// Headshot of a person (cast/crew).
-    pub fn person_image_url(&self, person_id: &str, tag: &str, max_width: u32) -> Url {
-        let image = ImageRef {
-            item_id: person_id.to_string(),
-            kind: ImageKind::Primary,
-            tag: tag.to_string(),
-            blurhash: None,
-        };
-        self.image_url(&image, max_width)
+    /// Headshot of a person (cast/crew). Cast lists often omit the tag even
+    /// when the person has a picture; without one the URL still finds it.
+    pub fn person_image_url(&self, person_id: &str, tag: Option<&str>, max_width: u32) -> Url {
+        match tag {
+            Some(tag) => {
+                let image = ImageRef {
+                    item_id: person_id.to_string(),
+                    kind: ImageKind::Primary,
+                    tag: tag.to_string(),
+                    blurhash: None,
+                };
+                self.image_url(&image, max_width)
+            }
+            None => {
+                let mut url = self.url(&format!("Items/{person_id}/Images/Primary"));
+                url.query_pairs_mut()
+                    .append_pair("maxWidth", &max_width.to_string())
+                    .append_pair("quality", "90");
+                url
+            }
+        }
     }
 
     pub fn user_image_url(&self, user_id: &str, tag: &str, max_width: u32) -> Url {
