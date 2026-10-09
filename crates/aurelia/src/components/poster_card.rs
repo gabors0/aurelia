@@ -3,13 +3,12 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Icon;
 use gpui_kit::prelude::*;
-use gpui_kit::{
-    App, FontWeight, Hsla, ObjectFit, Pixels, SharedString, Window, div, hsla, px, rgba,
-};
+use gpui_kit::{App, FontWeight, Hsla, ObjectFit, Pixels, SharedString, Window, div, hsla, px};
 use jellyfin::{BaseItem, ItemKind};
 
 use crate::components::art::Art;
 use crate::components::item_menu;
+use crate::components::motion::pressable;
 use crate::components::progress;
 use crate::format;
 use crate::images::ImageRequest;
@@ -19,6 +18,8 @@ use crate::theme::Palette;
 use crate::views::shell;
 
 pub const PORTRAIT_WIDTH: Pixels = px(172.);
+/// How far a card rises when hovered or focused.
+pub const LIFT: f32 = 6.;
 pub const LANDSCAPE_WIDTH: Pixels = px(316.);
 const RADIUS: Pixels = px(12.);
 
@@ -133,153 +134,153 @@ impl RenderOnce for PosterCard {
             .and_then(|d| d.unplayed_item_count)
             .filter(|n| *n > 0 && self.item.kind == ItemKind::Series);
         let accent = self.accent;
+        let width = self.width;
         let route = Route::for_item(&self.item);
 
-        let card = div()
-            .id(group.clone())
-            .group(group.clone())
-            .flex()
-            .flex_col()
-            .gap_2()
-            .w(self.width)
-            .flex_shrink_0()
-            .cursor_pointer()
+        let title_text = self.item.name.clone();
+        let card = pressable(group.clone())
             .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
-            .child(
-                div()
-                    .relative()
-                    .w_full()
-                    .h(art_height)
-                    .rounded(RADIUS)
-                    .shadow(vec![gpui_kit::BoxShadow {
-                        color: hsla(0., 0., 0., 0.35),
-                        offset: gpui_kit::point(px(0.), px(8.)),
-                        blur_radius: px(24.),
-                        spread_radius: px(-8.),
-                        inset: false,
-                    }])
-                    .child(
-                        Art::new(format!("{group}-art"), request)
-                            .title(self.item.name.clone())
-                            .radius(RADIUS)
-                            .fit(ObjectFit::Cover)
-                            .size_full(),
-                    )
-                    // Hover: brighten, accent ring, play glyph.
+            .look(move |this, m| {
+                this.flex()
+                    .flex_col()
+                    .gap_2()
+                    .w(width)
+                    .flex_shrink_0()
+                    .cursor_pointer()
                     .child(
                         div()
-                            .absolute()
-                            .inset_0()
+                            .relative()
+                            .top(px(m.lerp(0., -LIFT)))
+                            .w_full()
+                            .h(art_height)
                             .rounded(RADIUS)
-                            .border_2()
-                            .border_color(gpui_kit::transparent_black())
-                            .group_hover(group.clone(), move |style| {
-                                style.border_color(accent).bg(hsla(0., 0., 1., 0.06))
+                            .shadow(vec![gpui_kit::BoxShadow {
+                                color: Palette::shadow(m.lerp(0.35, 0.55)),
+                                offset: gpui_kit::point(px(0.), px(m.lerp(8., 16.))),
+                                blur_radius: px(m.lerp(24., 34.)),
+                                spread_radius: px(-8.),
+                                inset: false,
+                            }])
+                            .child(
+                                Art::new(format!("{group}-art"), request)
+                                    .title(title_text)
+                                    .radius(RADIUS)
+                                    .fit(ObjectFit::Cover)
+                                    .size_full(),
+                            )
+                            // Active: brighten, accent ring, play glyph.
+                            .child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .rounded(RADIUS)
+                                    .border_2()
+                                    .border_color(accent.opacity(m.amount()))
+                                    .bg(hsla(0., 0., 1., 0.06 * m.amount())),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .opacity(m.amount())
+                                    .child(play_glyph()),
+                            )
+                            .when(played, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .top_2()
+                                        .right_2()
+                                        .size_6()
+                                        .rounded_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .bg(accent)
+                                        .child(Icon::new(IconName::Check).size_3p5().text_color(
+                                            crate::components::button::on_color(accent),
+                                        )),
+                                )
+                            })
+                            .when_some(unplayed, |this, count| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .top_2()
+                                        .right_2()
+                                        .min_w_6()
+                                        .h_6()
+                                        .px_1p5()
+                                        .rounded_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .bg(accent)
+                                        .text_xs()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(crate::components::button::on_color(accent))
+                                        .child(count.to_string()),
+                                )
+                            })
+                            .when_some(progress, |this, fraction| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .bottom_2()
+                                        .left_2()
+                                        .right_2()
+                                        .child(progress::bar(fraction, accent)),
+                                )
                             }),
                     )
                     .child(
                         div()
-                            .absolute()
-                            .inset_0()
                             .flex()
-                            .items_center()
-                            .justify_center()
-                            .opacity(0.)
-                            .group_hover(group.clone(), |style| style.opacity(1.))
+                            .flex_col()
+                            .gap_0p5()
+                            .px_0p5()
                             .child(
                                 div()
-                                    .size(px(52.))
-                                    .rounded_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(rgba(0x0A0B10B3))
-                                    .border_1()
-                                    .border_color(hsla(0., 0., 1., 0.25))
-                                    .child(
-                                        Icon::new(IconName::Play)
-                                            .size_5()
-                                            .text_color(Palette::text()),
-                                    ),
-                            ),
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate()
+                                    .text_color(m.mix(Palette::text_caption(), Palette::text()))
+                                    .child(title),
+                            )
+                            .when_some(subtitle, |this, subtitle| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .truncate()
+                                        .text_color(Palette::text_tertiary())
+                                        .child(subtitle),
+                                )
+                            }),
                     )
-                    .when(played, |this| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .top_2()
-                                .right_2()
-                                .size_6()
-                                .rounded_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(accent)
-                                .child(
-                                    Icon::new(IconName::Check)
-                                        .size_3p5()
-                                        .text_color(crate::components::button::on_color(accent)),
-                                ),
-                        )
-                    })
-                    .when_some(unplayed, |this, count| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .top_2()
-                                .right_2()
-                                .min_w_6()
-                                .h_6()
-                                .px_1p5()
-                                .rounded_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(accent)
-                                .text_xs()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(crate::components::button::on_color(accent))
-                                .child(count.to_string()),
-                        )
-                    })
-                    .when_some(progress, |this, fraction| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .bottom_2()
-                                .left_2()
-                                .right_2()
-                                .child(progress::bar(fraction, accent)),
-                        )
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .px_0p5()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate()
-                            .group_hover(group.clone(), |style| style.text_color(Palette::text()))
-                            .text_color(hsla(0., 0., 0.9, 1.))
-                            .child(title),
-                    )
-                    .when_some(subtitle, |this, subtitle| {
-                        this.child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(Palette::text_tertiary())
-                                .child(subtitle),
-                        )
-                    }),
-            );
+            });
         item_menu::attach(card, self.item)
     }
+}
+
+/// The round play glyph shown over artwork when it's hovered or focused.
+pub fn play_glyph() -> impl IntoElement {
+    div()
+        .size(px(52.))
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(hsla(230. / 360., 0.2, 0.05, 0.7))
+        .border_1()
+        .border_color(hsla(0., 0., 1., 0.25))
+        .child(
+            Icon::new(IconName::Play)
+                .size_5()
+                .text_color(hsla(0., 0., 1., 1.)),
+        )
 }
 
 #[cfg(test)]

@@ -9,8 +9,9 @@ pub mod library;
 pub mod person;
 pub mod search;
 pub mod series;
+pub mod settings;
 
-use gpui_kit::{AnyView, App, AppContext as _, Entity, FocusHandle, Window};
+use gpui_kit::{AnyView, App, AppContext as _, Entity, FocusHandle, ScrollHandle, Window};
 
 use self::collection::CollectionPage;
 use self::home::HomePage;
@@ -19,6 +20,7 @@ use self::library::LibraryPage;
 use self::person::PersonPage;
 use self::search::SearchPage;
 use self::series::SeriesPage;
+use self::settings::SettingsPage;
 use crate::nav::Route;
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ pub enum Page {
     Collection(Entity<CollectionPage>),
     Person(Entity<PersonPage>),
     Search(Entity<SearchPage>),
+    Settings(Entity<SettingsPage>),
 }
 
 impl Page {
@@ -53,6 +56,7 @@ impl Page {
                 Page::Person(cx.new(|cx| PersonPage::new(id.clone(), window, cx)))
             }
             Route::Search => Page::Search(cx.new(|cx| SearchPage::new(window, cx))),
+            Route::Settings => Page::Settings(cx.new(|cx| SettingsPage::new(window, cx))),
         }
     }
 
@@ -65,6 +69,7 @@ impl Page {
             Page::Collection(page) => page.clone().into(),
             Page::Person(page) => page.clone().into(),
             Page::Search(page) => page.clone().into(),
+            Page::Settings(page) => page.clone().into(),
         }
     }
 
@@ -86,8 +91,24 @@ impl Page {
             Page::Collection(page) => page.read(cx).scroll_handle().offset().y,
             Page::Person(page) => page.read(cx).scroll_handle().offset().y,
             Page::Search(page) => page.read(cx).scroll_handle().offset().y,
+            Page::Settings(page) => page.read(cx).scroll_handle().offset().y,
             Page::Library(_) => gpui_kit::px(0.),
         }
+    }
+
+    /// The handle of the page's main vertical scroller, for keyboard
+    /// navigation to scroll focused things into view.
+    pub fn scroll_handle(&self, cx: &App) -> Option<ScrollHandle> {
+        Some(match self {
+            Page::Home(page) => page.read(cx).scroll_handle().clone(),
+            Page::Item(page) => page.read(cx).scroll_handle().clone(),
+            Page::Series(page) => page.read(cx).scroll_handle().clone(),
+            Page::Collection(page) => page.read(cx).scroll_handle().clone(),
+            Page::Person(page) => page.read(cx).scroll_handle().clone(),
+            Page::Search(page) => page.read(cx).scroll_handle().clone(),
+            Page::Settings(page) => page.read(cx).scroll_handle().clone(),
+            Page::Library(page) => page.read(cx).grid_scroll_handle(),
+        })
     }
 
     /// Enter on a page: play what it shows.
@@ -133,6 +154,7 @@ impl Page {
             Page::Collection(page) => apply(page, cx, |p| p.patch_user_data(id, data)),
             Page::Person(page) => apply(page, cx, |p| p.patch_user_data(id, data)),
             Page::Search(page) => apply(page, cx, |p| p.patch_user_data(id, data)),
+            Page::Settings(_) => {}
         }
     }
 
@@ -146,6 +168,7 @@ impl Page {
             Page::Collection(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
             Page::Person(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
             Page::Search(page) => page.update(cx, |page, cx| page.refresh(window, cx)),
+            Page::Settings(page) => page.update(cx, |page, cx| page.refresh(cx)),
         }
     }
 }

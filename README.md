@@ -12,6 +12,8 @@ progress kept in sync with the server.
 | ![Library](docs/screenshots/library.jpg) | ![Movie](docs/screenshots/movie.jpg) |
 | ![Series](docs/screenshots/series.jpg) | ![Episode](docs/screenshots/episode.jpg) |
 | ![Shelves](docs/screenshots/shelves.jpg) | ![Sign in](docs/screenshots/login.jpg) |
+| ![Light theme](docs/screenshots/light.jpg) | ![Keyboard focus](docs/screenshots/keyboard.jpg) |
+| ![Who's watching?](docs/screenshots/profiles.jpg) | ![Settings](docs/screenshots/settings.jpg) |
 
 ## Features
 
@@ -41,8 +43,25 @@ progress kept in sync with the server.
   never put on the command line.
 - **Accent colours**: every page takes its accent colour and soft ambient light
   from its artwork.
-- **Sign-in**: username and password, or Quick Connect. Only the session token
-  is kept (in `~/.config/aurelia`, mode 0600), never your password.
+- **Light and dark**: a dark, cinematic theme, a fully light one (artwork fades
+  into a light page and white title logos are redrawn dark), or follow the
+  desktop's setting.
+- **Keyboard navigation**: the arrow keys move between posters, shelves,
+  buttons and filters by where they are on screen, like a TV interface. Enter
+  or Space presses whatever is focused, and going back puts focus back where
+  you were.
+- **Motion**: cards lift as you point at them or focus them, pages fade in,
+  and buttons, tabs and switches ease between states. Animations can be turned
+  off in Settings.
+- **Accounts and "Who's watching?"**: keep several accounts, on one server or
+  several, and switch between them without signing in again. Other users your
+  server lists appear too. The picker opens at launch once two or more
+  accounts are saved, and from the account menu.
+- **Sign-in**: username and password, or Quick Connect. Only the session tokens
+  are kept (in `~/.config/aurelia`, mode 0600), never your password. Each
+  account signs in as its own device.
+- **Settings** (account menu or `Ctrl+,`): theme, animations, the Home
+  slideshow, the launch picker, and your saved accounts.
 
 ## Running
 
@@ -68,12 +87,15 @@ Aurelia needs `mpv` on `PATH`, or set `AURELIA_MPV=/path/to/mpv`.
 
 | Key | Action |
 |---|---|
+| `↑` `↓` `←` `→` | Move between posters, shelves and buttons |
+| `Enter`, `Space` | Press what's focused; with nothing focused, play the movie, episode, show or collection on screen |
+| `Tab` / `Shift+Tab` | Next / previous control, including the pickers and the account menu |
 | `Ctrl+F` or the 🔍 button | Search (`Esc` clears it, then goes back) |
-| `Enter` | Play the movie, episode, show or collection on screen |
-| `←` / `→` | Previous / next slide on Home |
-| `Esc`, `Alt+←`, mouse back | Back |
+| `←` / `→` | Previous / next slide on Home, before anything is focused |
+| `Esc`, `Alt+←`, mouse back | Back (on Home: let go of the focused item) |
 | `Alt+→`, mouse forward | Forward |
 | `Ctrl+R`, `F5`, or the ⟳ button | Refresh (also automatic when you come back after a couple of minutes) |
+| `Ctrl+,` | Settings |
 | `Ctrl+Q` | Quit |
 
 ## Architecture
@@ -99,7 +121,8 @@ These environment variables exist for screenshots and end-to-end testing:
 | Variable | Effect |
 |---|---|
 | `AURELIA_SERVER`, `AURELIA_USER`, `AURELIA_PASSWORD` | Sign in automatically (server alone: pre-fill and probe it) |
-| `AURELIA_ROUTE=item:<id>`, `series:<id>`, `library:<id>` | Open a page at startup |
+| `AURELIA_ROUTE=item:<id>`, `series:<id>`, `library:<id>`, `collection:<id>`, `person:<id>`, `genre:<name>`, `search:<query>`, `settings` | Open a page at startup |
+| `AURELIA_KEYS="down down right enter"` | Type these keys into the window, one every 0.7 s, starting `AURELIA_KEYS_AFTER` seconds (default 8) after launch |
 | `AURELIA_AUTOPLAY=1` | Play the first item page opened |
 | `AURELIA_SCROLL_Y=<px>` | Scroll pages down once loaded |
 | `AURELIA_LOG=debug` | Logging filter (`tracing` syntax) |

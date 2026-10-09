@@ -30,6 +30,7 @@ pub enum Route {
         name: String,
     },
     Search,
+    Settings,
 }
 
 impl Route {

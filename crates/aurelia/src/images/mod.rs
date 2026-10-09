@@ -24,10 +24,12 @@ const PLACEHOLDER_SIZE: (u32, u32) = (32, 20);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageStyle {
     Plain,
-    /// Blurred, darkened ambient light; also yields the accent colour.
+    /// Blurred ambient light; also yields the accent colour.
     Ambient,
     /// A title logo, with dark lettering lifted so it reads on dark art.
     Logo,
+    /// A title logo for a light page: light lettering lowered.
+    LogoOnLight,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -69,8 +71,13 @@ impl ImageRequest {
         self
     }
 
+    /// A title logo, made legible on the current theme's page.
     pub fn logo(mut self) -> Self {
-        self.style = ImageStyle::Logo;
+        self.style = if crate::theme::is_light() {
+            ImageStyle::LogoOnLight
+        } else {
+            ImageStyle::Logo
+        };
         self
     }
 
@@ -240,6 +247,7 @@ impl ImageStore {
                                 (decode::ambient(&image), accent)
                             }
                             ImageStyle::Logo => (decode::legible_logo(image), None),
+                            ImageStyle::LogoOnLight => (decode::legible_logo_on_light(image), None),
                         })
                     })
                     .await

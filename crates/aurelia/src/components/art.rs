@@ -90,6 +90,7 @@ impl RenderOnce for Art {
             .refine_style(&self.style);
         let radius = self.radius;
 
+        let (fallback_top, fallback_bottom) = Palette::art_fallback();
         let backdrop = match placeholder {
             Some(placeholder) => img(ImageSource::Render(placeholder))
                 .absolute()
@@ -104,8 +105,8 @@ impl RenderOnce for Art {
                 .rounded(radius)
                 .bg(linear_gradient(
                     160.,
-                    linear_color_stop(gpui_kit::rgb(0x23202F), 0.),
-                    linear_color_stop(gpui_kit::rgb(0x12131A), 1.),
+                    linear_color_stop(fallback_top, 0.),
+                    linear_color_stop(fallback_bottom, 1.),
                 ))
                 .when_some(self.title.filter(|_| failed), |this, title| {
                     this.flex().items_center().justify_center().p_3().child(

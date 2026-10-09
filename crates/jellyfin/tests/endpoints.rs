@@ -355,3 +355,27 @@ fn backdrop_falls_back_to_parent() {
     );
     assert!(backdrop.blurhash.is_some() || episode.image_blur_hashes.is_empty());
 }
+
+#[tokio::test]
+async fn public_users_lists_who_can_sign_in() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Users/Public"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("public_users.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let anonymous = Client::new(&server.uri(), DeviceInfo::new("A", "b", "c", "d")).unwrap();
+    let users = anonymous.public_users().await.unwrap();
+    let summary: Vec<(&str, bool, bool)> = users
+        .iter()
+        .map(|u| {
+            (
+                u.name.as_str(),
+                u.has_password,
+                u.primary_image_tag.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(summary, [("demo", true, true), ("kids", false, false)]);
+}

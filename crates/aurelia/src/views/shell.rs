@@ -1,19 +1,28 @@
 //! The signed-in window: floating navigation bar over the current page,
-//! history, keyboard shortcuts, and app-wide error handling.
+//! history, keyboard shortcuts and navigation, page transitions, and
+//! app-wide error handling.
 
-use gpui_kit::AnimationExt as _;
+use std::collections::HashMap;
+use std::time::Duration;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{Sizable as _, TitleBar, WindowExt as _, h_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    App, Context, EventEmitter, FocusHandle, Focusable, FontWeight, Global, KeyBinding,
-    MouseButton, NavigationDirection, Pixels, SharedString, WeakEntity, Window, actions, div,
-    linear_color_stop, linear_gradient, px, rgba,
+    Animation, AnimationExt as _, App, Context, ElementId, EntityId, EventEmitter, FocusHandle,
+    Focusable, FontWeight, Global, KeyBinding, MouseButton, NavigationDirection, Pixels,
+    SharedString, SpringAnimation, WeakEntity, Window, actions, div, linear_color_stop,
+    linear_gradient, px,
 };
 
+use crate::components::art::Art;
+use crate::components::button::{focus_ring, icon_button};
+use crate::components::key_nav::{self, Direction};
 use crate::components::logo;
+use crate::components::motion::{SPRING, mix, pressable};
+use crate::images::ImageRequest;
 use crate::loadable::describe;
 use crate::nav::{Nav, Route};
 use crate::state::AppState;
@@ -24,6 +33,10 @@ use gpui_kit::assets::IconName as icon;
 pub const NAV_HEIGHT: Pixels = px(64.);
 /// Coming back to the window after this long refreshes the page.
 const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
+/// How long a page takes to fade in.
+const PAGE_FADE: Duration = Duration::from_millis(220);
+/// How far a newly opened page rises as it fades in.
+const PAGE_RISE: f32 = 12.;
 
 /// Whether data loaded at `last` is old enough to reload on return.
 fn is_stale(last: std::time::Instant, now: std::time::Instant) -> bool {
@@ -39,9 +52,8 @@ actions!(
         Refresh,
         Quit,
         PlayCurrent,
-        PreviousSlide,
-        NextSlide,
-        Search
+        Search,
+        OpenSettings
     ]
 );
 
@@ -53,17 +65,19 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-r", Refresh, Some(CONTEXT)),
         KeyBinding::new("f5", Refresh, Some(CONTEXT)),
         KeyBinding::new("enter", PlayCurrent, Some(CONTEXT)),
-        KeyBinding::new("left", PreviousSlide, Some(CONTEXT)),
-        KeyBinding::new("right", NextSlide, Some(CONTEXT)),
         KeyBinding::new("ctrl-f", Search, Some(CONTEXT)),
+        KeyBinding::new("ctrl-,", OpenSettings, Some(CONTEXT)),
         KeyBinding::new("ctrl-q", Quit, None),
     ]);
+    key_nav::bind_keys(&[CONTEXT], cx);
     cx.on_action(|_: &Quit, cx| cx.quit());
 }
 
 pub enum ShellEvent {
     SignOut,
     SessionExpired,
+    SwitchUser,
+    AddAccount,
 }
 
 /// Lets pages reach the shell without threading a handle through every view.
@@ -83,6 +97,16 @@ fn with_shell(cx: &mut App, f: impl FnOnce(&mut Shell, &mut Context<Shell>)) {
 
 pub fn navigate(route: Route, window: &mut Window, cx: &mut App) {
     with_shell(cx, |shell, cx| shell.navigate(route, window, cx));
+}
+
+/// Opens "Who's watching?".
+pub fn switch_user(cx: &mut App) {
+    with_shell(cx, |_, cx| cx.emit(ShellEvent::SwitchUser));
+}
+
+/// Opens sign-in for another account, keeping this one open behind it.
+pub fn add_account(cx: &mut App) {
+    with_shell(cx, |_, cx| cx.emit(ShellEvent::AddAccount));
 }
 
 /// Every page in the history, oldest first.
@@ -143,10 +167,13 @@ pub fn session_expired(cx: &mut App) {
 }
 
 /// Development: `AURELIA_ROUTE=item:<id>|series:<id>|library:<id>|
-/// collection:<id>|person:<id>|genre:<name>|search:<query>` opens a page at
-/// startup (for screenshots).
+/// collection:<id>|person:<id>|genre:<name>|search:<query>|settings` opens a
+/// page at startup (for screenshots).
 fn dev_start_route() -> Option<Route> {
     let value = std::env::var("AURELIA_ROUTE").ok()?;
+    if value == "settings" {
+        return Some(Route::Settings);
+    }
     let (kind, id) = value.split_once(':')?;
     let id = id.to_string();
     Some(match kind {
@@ -174,12 +201,23 @@ fn dev_search_query() -> Option<String> {
     (!query.is_empty()).then(|| query.to_string())
 }
 
+/// How the page on screen arrived, for its entrance.
+#[derive(Clone, Copy)]
+struct Transition {
+    serial: u64,
+    /// Opened (rises as it fades in) rather than returned to (fades).
+    opened: bool,
+}
+
 pub struct Shell {
     nav: Nav<Page>,
     focus: FocusHandle,
     /// Bumped on every refresh; keys the refresh icon's spin.
     refreshes: usize,
     last_refresh: std::time::Instant,
+    transition: Transition,
+    /// The nav target that had keyboard focus on each page left behind.
+    focused_on: HashMap<EntityId, ElementId>,
     _activation: gpui_kit::Subscription,
 }
 
@@ -209,6 +247,11 @@ impl Shell {
             focus,
             refreshes: 0,
             last_refresh: std::time::Instant::now(),
+            transition: Transition {
+                serial: 0,
+                opened: true,
+            },
+            focused_on: HashMap::new(),
             _activation: activation,
         };
         if let Some(route) = dev_start_route() {
@@ -224,9 +267,42 @@ impl Shell {
         if self.nav.route() == &route {
             return;
         }
+        self.remember_focus(window, cx);
         let page = Page::for_route(&route, window, cx);
         self.nav.push(route, page);
+        self.arrive(true, None, window, cx);
+    }
+
+    /// Notes which target had focus on the page being left.
+    fn remember_focus(&mut self, window: &Window, cx: &App) {
+        let page = self.nav.page().view().entity_id();
+        match key_nav::focused_key(window, cx) {
+            Some(key) => {
+                self.focused_on.insert(page, key);
+            }
+            None => {
+                self.focused_on.remove(&page);
+            }
+        }
+    }
+
+    /// Shows the page now current: its entrance, its focus.
+    fn arrive(
+        &mut self,
+        opened: bool,
+        restore: Option<ElementId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.transition = Transition {
+            serial: self.transition.serial + 1,
+            opened,
+        };
         self.focus_page(window, cx);
+        key_nav::restore(restore, cx);
+        // Forget pages that fell out of the history.
+        let alive: Vec<EntityId> = self.nav.pages().map(|p| p.view().entity_id()).collect();
+        self.focused_on.retain(|page, _| alive.contains(page));
         cx.notify();
     }
 
@@ -239,16 +315,28 @@ impl Shell {
     }
 
     fn back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
+        self.remember_focus(window, cx);
         if self.nav.back() {
-            self.focus_page(window, cx);
+            let restore = self
+                .focused_on
+                .get(&self.nav.page().view().entity_id())
+                .cloned();
+            self.arrive(false, restore, window, cx);
+        } else if key_nav::has_focus(window, cx) {
+            // Nowhere to go back to: Esc lets go of the focused card instead.
+            window.focus(&self.focus, cx);
             cx.notify();
         }
     }
 
     fn forward(&mut self, _: &Forward, window: &mut Window, cx: &mut Context<Self>) {
+        self.remember_focus(window, cx);
         if self.nav.forward() {
-            self.focus_page(window, cx);
-            cx.notify();
+            let restore = self
+                .focused_on
+                .get(&self.nav.page().view().entity_id())
+                .cloned();
+            self.arrive(false, restore, window, cx);
         }
     }
 
@@ -260,12 +348,20 @@ impl Shell {
         }
     }
 
-    fn previous_slide(&mut self, _: &PreviousSlide, _: &mut Window, cx: &mut Context<Self>) {
-        self.nav.page().clone().step_hero(-1, cx);
+    fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
+        self.navigate(Route::Settings, window, cx);
     }
 
-    fn next_slide(&mut self, _: &NextSlide, _: &mut Window, cx: &mut Context<Self>) {
-        self.nav.page().clone().step_hero(1, cx);
+    /// Arrow keys. With nothing focused, ←/→ on Home still change slides.
+    fn step(&mut self, direction: Direction, window: &mut Window, cx: &mut Context<Self>) {
+        let horizontal = matches!(direction, Direction::Left | Direction::Right);
+        if horizontal && !key_nav::has_focus(window, cx) && matches!(self.nav.page(), Page::Home(_))
+        {
+            let delta = if direction == Direction::Left { -1 } else { 1 };
+            self.nav.page().clone().step_hero(delta, cx);
+            return;
+        }
+        key_nav::step(direction, window, cx);
     }
 
     fn play_current(&mut self, _: &PlayCurrent, window: &mut Window, cx: &mut Context<Self>) {
@@ -292,61 +388,53 @@ impl Shell {
 
     fn render_search(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.nav.route() == &Route::Search;
-        div()
-            .id("search")
-            .size_8()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .cursor_pointer()
-            .when(active, |this| this.bg(Palette::glass_strong()))
-            .hover(|this| this.bg(Palette::glass_strong()))
+        icon_button("search", icon::Search, active)
+            .in_bar()
             .tooltip(|window, cx| {
                 gpui_kit::component::tooltip::Tooltip::new("Search (Ctrl+F)").build(window, cx)
             })
             .on_click(cx.listener(|this, _, window, cx| this.search(&Search, window, cx)))
-            .child(
-                gpui_kit::component::Icon::new(icon::Search)
-                    .size_4()
-                    .text_color(if active {
-                        Palette::text()
-                    } else {
-                        Palette::text_secondary()
-                    }),
-            )
     }
 
     fn render_refresh(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let glyph = gpui_kit::component::Icon::new(icon::RefreshCw)
-            .size_4()
-            .text_color(Palette::text_secondary());
-        let glyph = if self.refreshes > 0 {
-            glyph
-                .with_animation(
-                    ("refresh-spin", self.refreshes),
-                    gpui_kit::Animation::new(std::time::Duration::from_millis(650))
-                        .with_easing(gpui_kit::ease_in_out),
-                    |glyph, t| glyph.rotate(gpui_kit::percentage(t)),
-                )
-                .into_any_element()
-        } else {
-            glyph.into_any_element()
-        };
-        div()
-            .id("refresh")
-            .size_8()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .cursor_pointer()
-            .hover(|this| this.bg(Palette::glass_strong()))
+        let refreshes = self.refreshes;
+        pressable("refresh")
+            .in_bar()
             .tooltip(|window, cx| {
                 gpui_kit::component::tooltip::Tooltip::new("Refresh (Ctrl+R)").build(window, cx)
             })
             .on_click(cx.listener(|this, _, window, cx| this.refresh(&Refresh, window, cx)))
-            .child(glyph)
+            .look(move |this, m| {
+                let glyph = gpui_kit::component::Icon::new(icon::RefreshCw)
+                    .size_4()
+                    .text_color(m.mix(Palette::text_secondary(), Palette::text()));
+                let glyph = if refreshes > 0 {
+                    glyph
+                        .with_animation(
+                            ("refresh-spin", refreshes),
+                            Animation::new(Duration::from_millis(650))
+                                .with_easing(gpui_kit::ease_in_out),
+                            |glyph, t| glyph.rotate(gpui_kit::percentage(t)),
+                        )
+                        .into_any_element()
+                } else {
+                    glyph.into_any_element()
+                };
+                this.relative()
+                    .size_8()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .cursor_pointer()
+                    .bg(mix(
+                        gpui_kit::transparent_black(),
+                        Palette::glass_strong().into(),
+                        m.amount(),
+                    ))
+                    .child(focus_ring(m, px(16.)))
+                    .child(glyph)
+            })
     }
 
     fn render_tab(
@@ -361,24 +449,35 @@ impl Shell {
             (Route::Library { id: a, .. }, Route::Library { id: b, .. }) => a == b,
             _ => false,
         };
-        div()
-            .id(id)
-            .px_4()
-            .py_1p5()
-            .rounded_full()
-            .cursor_pointer()
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(if active {
-                Palette::text()
-            } else {
-                Palette::text_secondary()
-            })
-            .when(active, |this| this.bg(Palette::glass_strong()))
-            .hover(|this| this.text_color(Palette::text()).bg(Palette::glass()))
+        pressable(id)
+            .in_bar()
             .on_click(
                 cx.listener(move |this, _, window, cx| this.navigate(route.clone(), window, cx)),
             )
-            .child(label)
+            .look(move |this, m| {
+                this.relative()
+                    .px_4()
+                    .py_1p5()
+                    .rounded_full()
+                    .cursor_pointer()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(if active {
+                        Palette::text().into()
+                    } else {
+                        m.mix(Palette::text_secondary(), Palette::text())
+                    })
+                    .bg(if active {
+                        Palette::glass_strong().into()
+                    } else {
+                        mix(
+                            gpui_kit::transparent_black(),
+                            Palette::glass().into(),
+                            m.amount(),
+                        )
+                    })
+                    .child(focus_ring(m, px(16.)))
+                    .child(label)
+            })
     }
 
     fn render_nav(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -389,9 +488,16 @@ impl Shell {
             .filter(|view| view.is_video_library() || view.is_collections())
             .cloned()
             .collect();
-        let (user, server) = state
-            .session()
-            .map(|s| (s.user_name.clone(), s.server_name.clone()))
+        let session = state.session().cloned();
+        let avatar = session.as_ref().and_then(|s| {
+            let tag = s.image_tag.as_deref()?;
+            let client = state.client_for(s).ok()?;
+            Some(ImageRequest::new(
+                client.user_image_url(&s.user_id, tag, 96).to_string(),
+            ))
+        });
+        let (user, server) = session
+            .map(|s| (s.user_name, s.server_name))
             .unwrap_or_default();
         let can_go_back = self.nav.can_go_back();
         let scrolled = self.nav.page().scroll_offset(cx) < px(-24.);
@@ -421,19 +527,40 @@ impl Shell {
             .top_0()
             .left_0()
             .right_0()
-            .when(!scrolled, |this| {
-                this.h(NAV_HEIGHT + px(24.)).bg(linear_gradient(
-                    180.,
-                    linear_color_stop(rgba(0x0A0B10E6), 0.),
-                    linear_color_stop(rgba(0x0A0B1000), 1.),
-                ))
-            })
-            .when(scrolled, |this| {
-                this.h(NAV_HEIGHT)
-                    .bg(rgba(0x0C0D13FF))
+            .h(NAV_HEIGHT)
+            // Over the top of the page: a fade. Once the page scrolls under
+            // it: an opaque bar, so text can't show through.
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(NAV_HEIGHT + px(24.))
+                    .bg(linear_gradient(
+                        180.,
+                        linear_color_stop(Palette::bg_alpha(0.9), 0.),
+                        linear_color_stop(Palette::bg_alpha(0.), 1.),
+                    ))
+                    .with_spring(
+                        "nav-fade",
+                        SpringAnimation::new(SPRING).to(!scrolled),
+                        |this, phase| this.opacity(phase.0.clamp(0., 1.)),
+                    ),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .bg(Palette::bar())
                     .border_b_1()
                     .border_color(Palette::border())
-            })
+                    .with_spring(
+                        "nav-solid",
+                        SpringAnimation::new(SPRING).to(scrolled),
+                        |this, phase| this.opacity(phase.0.clamp(0., 1.)),
+                    ),
+            )
             .child(
                 TitleBar::new().h(NAV_HEIGHT).pl_5().child(
                     h_flex()
@@ -449,11 +576,14 @@ impl Shell {
                                         .when(can_go_back, |this| {
                                             this.child(
                                                 controls(div()).child(
-                                                    Button::new("back")
-                                                        .ghost()
-                                                        .small()
-                                                        .icon(icon::ChevronLeft)
-                                                        .tooltip("Back (Esc)")
+                                                    icon_button("back", icon::ChevronLeft, false)
+                                                        .in_bar()
+                                                        .tooltip(|window, cx| {
+                                                            gpui_kit::component::tooltip::Tooltip::new(
+                                                                "Back (Esc)",
+                                                            )
+                                                            .build(window, cx)
+                                                        })
                                                         .on_click(cx.listener(
                                                             |this, _, window, cx| {
                                                                 this.back(&Back, window, cx)
@@ -471,7 +601,7 @@ impl Shell {
                                 .gap_2()
                                 .child(self.render_search(cx))
                                 .child(self.render_refresh(cx))
-                                .child(account_button(user, server)),
+                                .child(account_button(user, server, avatar)),
                         ),
                 ),
             )
@@ -486,14 +616,15 @@ fn controls(element: gpui_kit::Div) -> gpui_kit::Div {
     element.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
-/// The user's initial in a circle; opens the account menu.
-fn account_button(user: String, server: String) -> impl IntoElement {
+/// The user's avatar (or initial) in a circle; opens the account menu.
+fn account_button(user: String, server: String, avatar: Option<ImageRequest>) -> impl IntoElement {
     let initial: SharedString = user
         .chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_default()
         .into();
+    let accent: gpui_kit::Hsla = Palette::accent().into();
     Button::new("account")
         .ghost()
         .small()
@@ -504,28 +635,74 @@ fn account_button(user: String, server: String) -> impl IntoElement {
         .rounded_full()
         .child(
             div()
+                .relative()
                 .size_7()
                 .rounded_full()
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(rgba(0xB69CFF40))
+                .bg(accent.opacity(0.25))
                 .text_color(Palette::text())
                 .font_weight(FontWeight::BOLD)
                 .text_sm()
-                .child(initial),
+                .child(initial)
+                .when_some(avatar, |this, avatar| {
+                    this.child(
+                        Art::new("account-avatar", Some(avatar))
+                            .bare()
+                            .radius(px(14.))
+                            .absolute()
+                            .inset_0(),
+                    )
+                }),
         )
         .dropdown_menu_with_anchor(gpui_kit::Anchor::TopRight, move |menu, _, _| {
-            menu.label(format!("{user} · {server}")).separator().item(
-                PopupMenuItem::new("Sign out")
-                    .icon(icon::LogOut)
-                    .on_click(|_, _, cx| with_shell(cx, |_, cx| cx.emit(ShellEvent::SignOut))),
-            )
+            menu.label(format!("{user} · {server}"))
+                .separator()
+                .item(
+                    PopupMenuItem::new("Switch user…")
+                        .icon(icon::Users)
+                        .on_click(|_, _, cx| switch_user(cx)),
+                )
+                .item(
+                    PopupMenuItem::new("Settings")
+                        .icon(icon::Settings)
+                        .on_click(|_, window, cx| navigate(Route::Settings, window, cx)),
+                )
+                .separator()
+                .item(
+                    PopupMenuItem::new("Sign out")
+                        .icon(icon::LogOut)
+                        .on_click(|_, _, cx| with_shell(cx, |_, cx| cx.emit(ShellEvent::SignOut))),
+                )
         })
 }
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let scope = key_nav::scope(
+            self.focus.clone(),
+            self.nav.page().scroll_handle(cx),
+            NAV_HEIGHT,
+        );
+        let Transition { serial, opened } = self.transition;
+        let page = div()
+            .relative()
+            .size_full()
+            .child(self.nav.page().view())
+            .with_animation(
+                ElementId::NamedInteger("page".into(), serial),
+                Animation::new(PAGE_FADE).with_easing(gpui_kit::ease_out_quint()),
+                move |page, t| {
+                    let page = page.opacity(t);
+                    if opened {
+                        page.top(px(PAGE_RISE * (1. - t)))
+                    } else {
+                        page
+                    }
+                },
+            );
+
         div()
             .id("shell")
             .relative()
@@ -536,9 +713,20 @@ impl Render for Shell {
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::refresh))
             .on_action(cx.listener(Self::play_current))
-            .on_action(cx.listener(Self::previous_slide))
-            .on_action(cx.listener(Self::next_slide))
             .on_action(cx.listener(Self::search))
+            .on_action(cx.listener(Self::open_settings))
+            .on_action(cx.listener(|this, _: &key_nav::NavUp, window, cx| {
+                this.step(Direction::Up, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &key_nav::NavDown, window, cx| {
+                this.step(Direction::Down, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &key_nav::NavLeft, window, cx| {
+                this.step(Direction::Left, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &key_nav::NavRight, window, cx| {
+                this.step(Direction::Right, window, cx)
+            }))
             .on_mouse_down(
                 MouseButton::Navigate(NavigationDirection::Back),
                 cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
@@ -547,7 +735,8 @@ impl Render for Shell {
                 MouseButton::Navigate(NavigationDirection::Forward),
                 cx.listener(|this, _, window, cx| this.forward(&Forward, window, cx)),
             )
-            .child(div().size_full().child(self.nav.page().view()))
+            .child(scope)
+            .child(page)
             .child(self.render_nav(window, cx))
     }
 }
@@ -574,7 +763,7 @@ mod tests {
                     .id("account-slot")
                     .test_support()
                     .absolute()
-                    .child(account_button("user".into(), "server".into())),
+                    .child(account_button("user".into(), "server".into(), None)),
             )
         }
     }

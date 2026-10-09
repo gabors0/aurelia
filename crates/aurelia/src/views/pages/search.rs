@@ -17,7 +17,11 @@ use jellyfin::{BaseItem, ItemKind, ItemsQuery, UserData};
 
 use super::grid;
 use crate::components::art::Art;
+use crate::components::button::icon_button;
 use crate::components::cast::people_row;
+use crate::components::key_nav;
+use crate::components::motion::{mix, pressable};
+use crate::components::poster_card::LIFT;
 use crate::components::poster_card::PosterCard;
 use crate::components::row::{ROW_PADDING, row};
 use crate::images::ImageRequest;
@@ -312,10 +316,19 @@ impl SearchPage {
     }
 
     fn render_box(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let focused = self.input.focus_handle(cx).is_focused(window);
+        let input_focus = self.input.focus_handle(cx);
+        let focused = input_focus.is_focused(window);
         let has_text = !self.input.read(cx).value().is_empty();
         h_flex()
             .id("search-box")
+            .relative()
+            // Up from the results comes back here.
+            .child(key_nav::target(
+                "search-box".into(),
+                input_focus,
+                key_nav::Zone::Page,
+                false,
+            ))
             .h(px(60.))
             .px_5()
             .gap_3()
@@ -323,9 +336,9 @@ impl SearchPage {
             .bg(Palette::glass_strong())
             .border_1()
             .border_color(if focused {
-                Palette::accent().into()
+                Palette::accent()
             } else {
-                hsla(0., 0., 1., 0.12)
+                Palette::border()
             })
             .child(
                 Icon::new(IconName::Search)
@@ -341,21 +354,9 @@ impl SearchPage {
             )
             .when(has_text, |this| {
                 this.child(
-                    div()
-                        .id("search-clear")
-                        .size_8()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .cursor_pointer()
-                        .hover(|this| this.bg(Palette::glass_strong()))
-                        .on_click(cx.listener(|this, _, window, cx| this.clear(window, cx)))
-                        .child(
-                            Icon::new(IconName::X)
-                                .size_4()
-                                .text_color(Palette::text_secondary()),
-                        ),
+                    icon_button("search-clear", IconName::X, false)
+                        .unfocusable()
+                        .on_click(cx.listener(|this, _, window, cx| this.clear(window, cx))),
                 )
             })
     }
@@ -503,69 +504,87 @@ fn genre_tile(
         name: genre.name.clone(),
     };
     let count = titles.and_then(titles_label);
-    div()
-        .id(group.clone())
-        .group(group.clone())
-        .relative()
-        .w(width)
-        .h(px(112.))
-        .rounded(px(16.))
-        .cursor_pointer()
-        .bg(Palette::surface())
+    let name = genre.name.clone();
+    let accent: gpui_kit::Hsla = Palette::accent().into();
+    pressable(group.clone())
         .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
-        .child(
-            Art::new(SharedString::from(format!("{group}-art")), request)
-                .bare()
-                .radius(px(16.))
-                .size_full(),
-        )
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .rounded(px(16.))
-                .bg(linear_gradient(
-                    90.,
-                    linear_color_stop(hsla(0., 0., 0., 0.55), 0.),
-                    linear_color_stop(hsla(0., 0., 0., 0.05), 1.),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .rounded(px(16.))
-                .border_1()
-                .border_color(hsla(0., 0., 1., 0.1))
-                .group_hover(group, |style| {
-                    style
-                        .border_color(hsla(0., 0., 1., 0.45))
-                        .bg(hsla(0., 0., 1., 0.05))
-                }),
-        )
-        .child(
-            v_flex()
-                .absolute()
-                .left_5()
-                .bottom_4()
-                .right_5()
-                .child(
-                    div()
-                        .font_family(FONT_DISPLAY)
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(20.))
-                        .truncate()
-                        .child(genre.name.clone()),
-                )
-                .when_some(count, |this, count| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(hsla(0., 0., 1., 0.7))
-                            .child(count),
+        .look(move |this, m| {
+            this.relative().w(width).h(px(112.)).cursor_pointer().child(
+                div()
+                    .absolute()
+                    .top(px(m.lerp(0., -LIFT)))
+                    .left_0()
+                    .size_full()
+                    .rounded(px(16.))
+                    .bg(Palette::surface())
+                    .shadow(vec![gpui_kit::BoxShadow {
+                        color: Palette::shadow(m.lerp(0.2, 0.45)),
+                        offset: gpui_kit::point(px(0.), px(m.lerp(4., 14.))),
+                        blur_radius: px(m.lerp(16., 30.)),
+                        spread_radius: px(-8.),
+                        inset: false,
+                    }])
+                    .child(
+                        Art::new(SharedString::from(format!("{group}-art")), request)
+                            .bare()
+                            .radius(px(16.))
+                            .size_full(),
                     )
-                }),
-        )
+                    // The ambient art is bright; white names need it dimmed.
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .rounded(px(16.))
+                            .bg(linear_gradient(
+                                90.,
+                                linear_color_stop(hsla(0., 0., 0., 0.75), 0.),
+                                linear_color_stop(hsla(0., 0., 0., 0.45), 1.),
+                            )),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .rounded(px(16.))
+                            .border_1()
+                            .border_color(mix(
+                                hsla(0., 0., 1., 0.1),
+                                if m.focused {
+                                    accent
+                                } else {
+                                    hsla(0., 0., 1., 0.45)
+                                },
+                                m.amount(),
+                            ))
+                            .bg(hsla(0., 0., 1., 0.05 * m.amount())),
+                    )
+                    .child(
+                        v_flex()
+                            .absolute()
+                            .left_5()
+                            .bottom_4()
+                            .right_5()
+                            .text_color(gpui_kit::white())
+                            .child(
+                                div()
+                                    .font_family(FONT_DISPLAY)
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_size(px(20.))
+                                    .truncate()
+                                    .child(name),
+                            )
+                            .when_some(count, |this, count| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(hsla(0., 0., 1., 0.75))
+                                        .child(count),
+                                )
+                            }),
+                    ),
+            )
+        })
         .into_any_element()
 }
 

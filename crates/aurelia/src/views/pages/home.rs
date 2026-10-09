@@ -10,15 +10,17 @@ use gpui_kit::component::h_flex;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    Animation, AnimationExt as _, AnyElement, Context, ElementId, FontWeight, Hsla, ScrollHandle,
-    SharedString, Task, Window, div, hsla, px, rgba,
+    Animation, AnimationExt as _, AnyElement, App, Context, ElementId, FontWeight, Hsla,
+    ScrollHandle, SharedString, SpringAnimation, Task, Window, div, px,
 };
 use jellyfin::{BaseItem, ItemFilter, ItemKind, ItemsQuery, SortBy, UserData, UserView};
 
 use super::carousel::{self, Carousel};
-use crate::components::button::{glass_button, play_button};
+use crate::components::button::{focus_ring, glass_button, play_button};
 use crate::components::hero;
+use crate::components::key_nav;
 use crate::components::meta;
+use crate::components::motion::{Pressable, SPRING, mix, pressable};
 use crate::components::poster_card::{LANDSCAPE_WIDTH, PORTRAIT_WIDTH, PosterCard};
 use crate::components::row::{ROW_PADDING, row, skeleton_row};
 use crate::images::{ImageRequest, ImageState, ImageStore};
@@ -48,6 +50,8 @@ pub struct HomePage {
     /// How many of the first hero slides come from Continue Watching.
     hero_resume: usize,
     carousel: Carousel,
+    hero_hovered: bool,
+    hero_focused: bool,
     scroll: ScrollHandle,
     rows: HashMap<SharedString, ScrollHandle>,
     _load: Option<Task<()>>,
@@ -63,7 +67,8 @@ impl HomePage {
                     .await;
                 let Ok(()) = this.update(cx, |this, cx| {
                     let now = Instant::now();
-                    if this.carousel.tick(now) | this.carousel.settle(now) {
+                    let autoplay = crate::settings::get(cx).hero_autoplay;
+                    if (autoplay && this.carousel.tick(now)) | this.carousel.settle(now) {
                         cx.notify();
                     }
                 }) else {
@@ -80,6 +85,8 @@ impl HomePage {
             hero: Vec::new(),
             hero_resume: 0,
             carousel: Carousel::new(Instant::now()),
+            hero_hovered: false,
+            hero_focused: false,
             scroll: ScrollHandle::new(),
             rows: HashMap::new(),
             _load: None,
@@ -229,8 +236,24 @@ impl HomePage {
         }
     }
 
-    fn pause_hero(&mut self, paused: bool) {
-        self.carousel.set_paused(paused, Instant::now());
+    /// Pointing at the hero pauses it, and so does keyboard focus on its
+    /// buttons (the slide changing would take the focused button away).
+    fn pause_hero(&mut self, hovered: bool) {
+        self.hero_hovered = hovered;
+        self.carousel
+            .set_paused(self.hero_hovered || self.hero_focused, Instant::now());
+    }
+
+    fn follow_hero_focus(&mut self, window: &Window, cx: &App) {
+        let focused = matches!(
+            key_nav::focused_key(window, cx),
+            Some(ElementId::Name(name)) if name.starts_with("hero-")
+        );
+        if focused != self.hero_focused {
+            self.hero_focused = focused;
+            self.carousel
+                .set_paused(self.hero_hovered || self.hero_focused, Instant::now());
+        }
     }
 
     pub fn scroll_handle(&self) -> &ScrollHandle {
@@ -267,6 +290,7 @@ impl HomePage {
                     _ => None,
                 },
             )
+            .map(Palette::tune_accent)
             .unwrap_or_else(|| Palette::accent().into())
     }
 
@@ -288,10 +312,13 @@ impl HomePage {
         }
     }
 
+    /// `outgoing`: the slide fading out under the next one; its buttons
+    /// can't take keyboard focus (they're about to go).
     fn render_slide(
         &self,
         index: usize,
         serial: u64,
+        outgoing: bool,
         accent: Hsla,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -372,7 +399,7 @@ impl HomePage {
                     .when_some(item.overview.clone(), |this, overview| {
                         this.child(
                             div()
-                                .text_color(hsla(0., 0., 0.85, 1.))
+                                .text_color(Palette::text_body())
                                 .line_height(px(24.))
                                 .line_clamp(3)
                                 .text_ellipsis()
@@ -384,13 +411,16 @@ impl HomePage {
                             .flex()
                             .gap_3()
                             .mt_2()
-                            .child(play_button("hero-play", label, accent).on_click(
-                                move |_, window, cx| {
-                                    crate::playback::play_item(&play_item, false, window, cx)
-                                },
-                            ))
+                            .child(
+                                play_button("hero-play", label, accent)
+                                    .when(outgoing, |this| this.unfocusable())
+                                    .on_click(move |_, window, cx| {
+                                        crate::playback::play_item(&play_item, false, window, cx)
+                                    }),
+                            )
                             .child(
                                 glass_button("hero-info", Some(IconName::Info), "More info")
+                                    .when(outgoing, |this| this.unfocusable())
                                     .on_click(move |_, window, cx| {
                                         shell::navigate(info_route.clone(), window, cx)
                                     }),
@@ -420,10 +450,16 @@ impl HomePage {
             .h(height)
             .flex_shrink_0()
             .when_some(self.carousel.previous(), |this, previous| {
-                this.child(self.render_slide(previous, self.carousel.previous_serial(), accent, cx))
+                this.child(self.render_slide(
+                    previous,
+                    self.carousel.previous_serial(),
+                    true,
+                    accent,
+                    cx,
+                ))
             })
             .when(count > 0, |this| {
-                this.child(self.render_slide(current, self.carousel.serial(), accent, cx))
+                this.child(self.render_slide(current, self.carousel.serial(), false, accent, cx))
             })
             .when(count > 1, |this| {
                 this.child(
@@ -442,19 +478,26 @@ impl HomePage {
                         )
                         .child(h_flex().gap_2().children((0..count).map(|i| {
                             let active = i == current;
+                            let dot = Hsla::from(Palette::text()).opacity(0.35);
                             div()
                                 .id(("hero-dot", i))
                                 .h(px(6.))
-                                .w(if active { px(28.) } else { px(6.) })
                                 .rounded_full()
                                 .cursor_pointer()
-                                .bg(if active {
-                                    accent
-                                } else {
-                                    hsla(0., 0., 1., 0.35)
-                                })
-                                .hover(|this| this.bg(hsla(0., 0., 1., 0.7)))
+                                .hover(|this| this.bg(Hsla::from(Palette::text()).opacity(0.7)))
                                 .on_click(cx.listener(move |this, _, _, cx| this.show_slide(i, cx)))
+                                .with_spring(
+                                    ("hero-dot-width", i),
+                                    SpringAnimation::new(SPRING).to(active),
+                                    move |this, phase| {
+                                        let t = phase.0;
+                                        this.w(px(6. + 22. * t.max(0.))).bg(mix(
+                                            dot,
+                                            accent,
+                                            t.clamp(0., 1.),
+                                        ))
+                                    },
+                                )
                         })))
                         .child(
                             hero_arrow("hero-next", IconName::ChevronRight)
@@ -573,27 +616,25 @@ impl HomePage {
     }
 }
 
-fn hero_arrow(id: &'static str, icon: IconName) -> gpui_kit::Stateful<gpui_kit::Div> {
-    div()
-        .id(id)
-        .size(px(40.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .cursor_pointer()
-        .bg(rgba(0x0A0B1099))
-        .border_1()
-        .border_color(hsla(0., 0., 1., 0.18))
-        .hover(|this| {
-            this.bg(rgba(0x22232ECC))
-                .border_color(hsla(0., 0., 1., 0.35))
-        })
-        .child(
-            gpui_kit::component::Icon::new(icon)
-                .size_5()
-                .text_color(Palette::text()),
-        )
+fn hero_arrow(id: &'static str, icon: IconName) -> Pressable {
+    pressable(id).look(move |this, m| {
+        this.relative()
+            .size(px(40.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .cursor_pointer()
+            .bg(m.mix(Palette::control(), Palette::control_hover()))
+            .border_1()
+            .border_color(Palette::control_border())
+            .child(focus_ring(m, px(20.)))
+            .child(
+                gpui_kit::component::Icon::new(icon)
+                    .size_5()
+                    .text_color(Palette::text()),
+            )
+    })
 }
 
 /// Adds up to `max` of `items` to the hero picks; returns how many it added.
@@ -631,6 +672,7 @@ fn ambient(request: &ImageRequest) -> ImageRequest {
 
 impl Render for HomePage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.follow_hero_focus(window, cx);
         let accent = self.accent(window, cx);
         let viewport = window.viewport_size();
         let hero_height = (viewport.height * HERO_HEIGHT).clamp(px(520.), px(820.));

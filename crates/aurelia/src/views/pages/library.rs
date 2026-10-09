@@ -27,6 +27,7 @@ use crate::views::shell::{self, NAV_HEIGHT};
 const PAGE_SIZE: u32 = 100;
 const GAP: f32 = 22.;
 const CAPTION_HEIGHT: f32 = 50.;
+const LIFT_ROOM: f32 = 8.;
 
 const SORTS: [(SortBy, &str); 4] = [
     (SortBy::Name, "A–Z"),
@@ -158,6 +159,11 @@ impl LibraryPage {
         crate::user_data::patch(self.items.iter_mut(), id, data)
     }
 
+    /// The grid's own scroll handle (the uniform list's).
+    pub fn grid_scroll_handle(&self) -> gpui_kit::ScrollHandle {
+        self.scroll.0.borrow().base_handle.clone()
+    }
+
     /// Reloads what's loaded and swaps it in, so the grid doesn't flash or
     /// lose its place; keeps the current sort and filters.
     pub fn refresh(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -282,7 +288,9 @@ impl LibraryPage {
                 .flex()
                 .gap(px(GAP))
                 .px(ROW_PADDING)
-                .pb(px(GAP))
+                // Room above for the cards' hover lift; the list clips.
+                .pt(px(LIFT_ROOM))
+                .pb(px(GAP - LIFT_ROOM))
                 .children(self.items[start..end].iter().map(|item| {
                     PosterCard::portrait(item)
                         .width(card_width)

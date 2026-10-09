@@ -76,14 +76,20 @@ is fully light, heroes included.
 - Enter/Space: a `NoAction` binding in `NavTarget` stops the shell's Enter
   (Play) from taking the key, so GPUI's built-in keyboard click fires the
   target's existing `on_click`. No click handler is duplicated.
-- Tab/Shift+Tab call `focus_next`/`focus_prev`. They also reach gpui-component
-  buttons (the genre and track pickers, the account menu).
+- Tab/Shift+Tab come from gpui-base's root (`focus_next`/`focus_prev`). They
+  also reach gpui-component buttons (the genre and track pickers, the account
+  menu).
+- If the focused target stops being drawn (its slide changed, its shelf
+  reloaded), `frame_end` hands focus back to the hosting view, so the keys keep
+  working. While a hero button has keyboard focus the slideshow pauses, and
+  the outgoing slide's buttons can't take focus.
 - Revealing: when a target gains focus it scrolls into view, horizontally
   within its row (inside `ROW_PADDING`) and vertically in the page (below the
   nav bar, with a bottom margin big enough for the next grid row to be
   rendered).
 - Back restores the target that was focused on the page you return to, found
-  again by its element id.
+  again by its element id. A restore retries for a few frames, because the
+  first frame after a window opens is drawn again with new focus handles.
 
 ## Accounts and "Who's watching?" (`session.rs`, `views/profiles.rs`)
 
@@ -114,7 +120,9 @@ is fully light, heroes included.
   (upsert, active, remove, legacy migration, 0600), settings serde and
   defaults, accent tuning, `LogoOnLight`.
 - jellyfin: mock-server test for `public_users`.
-- GPUI tests: arrows move focus along a shelf and Enter clicks the focused
-  card, and a hovered `Pressable` animates to its hovered look.
+- GPUI tests: arrows move focus along a row (no wrapping) and Enter clicks
+  the focused item, and a hovered `Pressable` springs to its hovered look.
+- `AURELIA_KEYS` types keys inside the app for headless screenshots, since
+  `wtype` drops keys.
 - Headless sway screenshots: Home and an item page in both themes, the
   settings page, the profile picker, a focused card.

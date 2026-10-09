@@ -7,14 +7,15 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, Window, div, hsla, px,
-    rgba,
+    AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, Window, div, px,
 };
 use jellyfin::{BaseItem, ItemKind, ItemsQuery, SortBy, SortOrder, UserData};
 
 use crate::components::ambient;
 use crate::components::art::Art;
+use crate::components::button::focus_ring;
 use crate::components::hero;
+use crate::components::motion::pressable;
 use crate::components::poster_card::PosterCard;
 use crate::components::row::{ROW_PADDING, row};
 use crate::format;
@@ -190,7 +191,7 @@ impl PersonPage {
             .pb_10()
             // Someone else's artwork: keep it a dim backdrop behind the person.
             .child(hero::backdrop("person-backdrop", backdrop))
-            .child(div().absolute().inset_0().bg(rgba(0x0A0B1099)))
+            .child(div().absolute().inset_0().bg(Palette::bg_alpha(0.6)))
             .child(
                 h_flex()
                     .relative()
@@ -204,7 +205,7 @@ impl PersonPage {
                             .flex_shrink_0()
                             .rounded(px(16.))
                             .shadow(vec![gpui_kit::BoxShadow {
-                                color: hsla(0., 0., 0., 0.5),
+                                color: Palette::shadow(0.5),
                                 offset: gpui_kit::point(px(0.), px(16.)),
                                 blur_radius: px(40.),
                                 spread_radius: px(-8.),
@@ -253,7 +254,7 @@ impl PersonPage {
                             .when_some(bio, |this, bio| {
                                 this.child(
                                     div()
-                                        .text_color(hsla(0., 0., 0.86, 1.))
+                                        .text_color(Palette::text_body())
                                         .line_height(px(24.))
                                         .when(!open, |this| {
                                             this.line_clamp(BIO_LINES).text_ellipsis()
@@ -262,18 +263,27 @@ impl PersonPage {
                                 )
                                 .when(long_bio, |this| {
                                     this.child(
-                                        div()
-                                            .id("person-bio-toggle")
-                                            .text_sm()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(Palette::text_secondary())
-                                            .cursor_pointer()
-                                            .hover(|this| this.text_color(Palette::text()))
+                                        pressable("person-bio-toggle")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.bio_open = !this.bio_open;
                                                 cx.notify();
                                             }))
-                                            .child(if open { "Show less" } else { "Read more" }),
+                                            .look(move |this, m| {
+                                                this.relative()
+                                                    .text_sm()
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(m.mix(
+                                                        Palette::text_secondary(),
+                                                        Palette::text(),
+                                                    ))
+                                                    .cursor_pointer()
+                                                    .child(focus_ring(m, px(6.)))
+                                                    .child(if open {
+                                                        "Show less"
+                                                    } else {
+                                                        "Read more"
+                                                    })
+                                            }),
                                     )
                                 })
                             }),
@@ -311,6 +321,7 @@ impl Render for PersonPage {
                 ImageState::Ready { accent, .. } => accent,
                 _ => None,
             })
+            .map(Palette::tune_accent)
             .unwrap_or_else(|| Palette::accent().into());
 
         let header = self.render_header(&person, backdrop, accent, cx);

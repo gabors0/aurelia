@@ -1,12 +1,13 @@
 //! Round headshots of people: an item's cast, or people found by search.
 //! Each opens the person's page.
 
-use gpui_kit::component::v_flex;
 use gpui_kit::prelude::*;
 use gpui_kit::{AnyElement, App, FontWeight, Hsla, ScrollHandle, SharedString, div, hsla, px};
 use jellyfin::{BaseItem, Person};
 
 use crate::components::art::Art;
+use crate::components::motion::pressable;
+use crate::components::poster_card::LIFT;
 use crate::components::row::row;
 use crate::images::ImageRequest;
 use crate::nav::Route;
@@ -35,58 +36,60 @@ pub fn headshot(
     let route = Route::Person {
         id: person_id.to_string(),
     };
-    v_flex()
-        .id(group.clone())
-        .group(group.clone())
-        .w(px(112.))
-        .flex_shrink_0()
-        .items_center()
-        .gap_2()
-        .cursor_pointer()
+    let name = name.to_string();
+    let role = role.filter(|r| !r.is_empty());
+    pressable(group.clone())
         .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
-        .child(
-            div()
-                .relative()
-                .size(px(SIZE))
+        .look(move |this, m| {
+            this.flex()
+                .flex_col()
+                .w(px(112.))
+                .flex_shrink_0()
+                .items_center()
+                .gap_2()
+                .cursor_pointer()
                 .child(
-                    Art::new(SharedString::from(format!("{group}-art")), request)
-                        .title(initials(name))
-                        .radius(px(SIZE / 2.))
-                        .size_full(),
+                    div()
+                        .relative()
+                        .top(px(m.lerp(0., -LIFT)))
+                        .size(px(SIZE))
+                        .child(
+                            Art::new(SharedString::from(format!("{group}-art")), request)
+                                .title(initials(&name))
+                                .radius(px(SIZE / 2.))
+                                .size_full(),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .rounded_full()
+                                .border_2()
+                                .border_color(accent.opacity(m.amount()))
+                                .bg(hsla(0., 0., 1., 0.06 * m.amount())),
+                        ),
                 )
                 .child(
                     div()
-                        .absolute()
-                        .inset_0()
-                        .rounded_full()
-                        .border_2()
-                        .border_color(gpui_kit::transparent_black())
-                        .group_hover(group.clone(), move |style| {
-                            style.border_color(accent).bg(hsla(0., 0., 1., 0.06))
-                        }),
-                ),
-        )
-        .child(
-            div()
-                .w_full()
-                .text_center()
-                .text_sm()
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .text_color(hsla(0., 0., 0.9, 1.))
-                .group_hover(group, |style| style.text_color(Palette::text()))
-                .child(name.to_string()),
-        )
-        .when_some(role.filter(|r| !r.is_empty()), |this, role| {
-            this.child(
-                div()
-                    .w_full()
-                    .text_center()
-                    .text_xs()
-                    .truncate()
-                    .text_color(Palette::text_tertiary())
-                    .child(role),
-            )
+                        .w_full()
+                        .text_center()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .truncate()
+                        .text_color(m.mix(Palette::text_caption(), Palette::text()))
+                        .child(name),
+                )
+                .when_some(role, |this, role| {
+                    this.child(
+                        div()
+                            .w_full()
+                            .text_center()
+                            .text_xs()
+                            .truncate()
+                            .text_color(Palette::text_tertiary())
+                            .child(role),
+                    )
+                })
         })
         .into_any_element()
 }

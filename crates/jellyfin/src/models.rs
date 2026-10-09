@@ -31,6 +31,8 @@ pub struct User {
     pub id: String,
     pub name: String,
     pub primary_image_tag: Option<String>,
+    /// Signing in needs a password (public user list).
+    pub has_password: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

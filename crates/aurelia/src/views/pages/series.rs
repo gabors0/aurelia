@@ -9,17 +9,17 @@ use gpui_kit::component::{Icon, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, Window, div, hsla, px,
-    rgba,
 };
 use jellyfin::BaseItem;
 
 use crate::components::ambient;
 use crate::components::art::Art;
-use crate::components::button::{glass_button, on_color, play_button, round_button};
+use crate::components::button::{focus_ring, glass_button, on_color, play_button, round_button};
 use crate::components::cast::cast_row;
 use crate::components::hero;
 use crate::components::item_menu;
 use crate::components::meta;
+use crate::components::motion::{Motion, mix, pressable};
 use crate::components::pill::pill;
 use crate::components::progress;
 use crate::components::row::ROW_PADDING;
@@ -274,7 +274,7 @@ impl SeriesPage {
                     .when_some(series.overview.clone(), |this, overview| {
                         this.child(
                             div()
-                                .text_color(hsla(0., 0., 0.86, 1.))
+                                .text_color(Palette::text_body())
                                 .line_height(px(24.))
                                 .line_clamp(3)
                                 .text_ellipsis()
@@ -464,144 +464,158 @@ fn episode_row(
     let progress = episode.progress();
     let played = episode.is_played() && progress.is_none();
 
-    let row = h_flex()
-        .id(group.clone())
-        .group(group.clone())
-        .items_start()
-        .gap_5()
-        .p_3()
-        .rounded(px(16.))
-        .cursor_pointer()
-        .when(is_next, |this| this.bg(accent.opacity(0.08)))
-        .hover(|this| this.bg(Palette::glass()))
-        .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
-        .child(
-            div()
-                .relative()
-                .w(px(256.))
-                .h(px(144.))
-                .flex_shrink_0()
-                .child(
-                    Art::new(SharedString::from(format!("{group}-art")), request)
-                        .title(episode.name.clone())
-                        .radius(px(12.))
-                        .size_full(),
+    let art_id = SharedString::from(format!("{group}-art"));
+    let play_button_id = SharedString::from(format!("{group}-play"));
+    let title = episode.name.clone();
+    let thumbnail = move |m: Motion| {
+        div()
+            .relative()
+            .w(px(256.))
+            .h(px(144.))
+            .flex_shrink_0()
+            .child(
+                Art::new(art_id, request)
+                    .title(title)
+                    .radius(px(12.))
+                    .size_full(),
+            )
+            .when(played, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top_2()
+                        .right_2()
+                        .size_6()
+                        .rounded_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(accent)
+                        .child(
+                            Icon::new(IconName::Check)
+                                .size_3p5()
+                                .text_color(on_color(accent)),
+                        ),
                 )
-                .when(played, |this| {
-                    this.child(
+            })
+            .when_some(progress, |this, fraction| {
+                this.child(
+                    div()
+                        .absolute()
+                        .bottom_2()
+                        .left_2()
+                        .right_2()
+                        .child(progress::bar(fraction, accent)),
+                )
+            })
+            .child(
+                div()
+                    .id(play_button_id)
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .opacity(m.amount())
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        playback::play(
+                            play_id.clone(),
+                            TrackSelection::default(),
+                            false,
+                            window,
+                            cx,
+                        );
+                    })
+                    .child(
                         div()
-                            .absolute()
-                            .top_2()
-                            .right_2()
-                            .size_6()
+                            .size(px(52.))
                             .rounded_full()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .bg(accent)
+                            .bg(hsla(230. / 360., 0.2, 0.05, 0.7))
+                            .border_1()
+                            .border_color(hsla(0., 0., 1., 0.25))
+                            .hover(move |this| this.bg(accent).border_color(accent))
                             .child(
-                                Icon::new(IconName::Check)
-                                    .size_3p5()
-                                    .text_color(on_color(accent)),
+                                Icon::new(IconName::Play)
+                                    .size_5()
+                                    .text_color(gpui_kit::white()),
                             ),
-                    )
-                })
-                .when_some(progress, |this, fraction| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .bottom_2()
-                            .left_2()
-                            .right_2()
-                            .child(progress::bar(fraction, accent)),
-                    )
-                })
+                    ),
+            )
+    };
+    let details = v_flex()
+        .flex_1()
+        .min_w_0()
+        .gap_1p5()
+        .pt_1()
+        .child(
+            h_flex()
+                .gap_3()
                 .child(
                     div()
-                        .id(SharedString::from(format!("{group}-play")))
-                        .absolute()
-                        .inset_0()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .opacity(0.)
-                        .group_hover(group.clone(), |style| style.opacity(1.))
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            playback::play(
-                                play_id.clone(),
-                                TrackSelection::default(),
-                                false,
-                                window,
-                                cx,
-                            );
-                        })
-                        .child(
-                            div()
-                                .size(px(52.))
-                                .rounded_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .bg(rgba(0x0A0B10B3))
-                                .border_1()
-                                .border_color(hsla(0., 0., 1., 0.25))
-                                .hover(move |this| this.bg(accent).border_color(accent))
-                                .child(Icon::new(IconName::Play).size_5()),
-                        ),
-                ),
-        )
-        .child(
-            v_flex()
-                .flex_1()
-                .min_w_0()
-                .gap_1p5()
-                .pt_1()
-                .child(
-                    h_flex()
-                        .gap_3()
-                        .child(
-                            div()
-                                .text_size(px(17.))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .truncate()
-                                .child(format!("{number}{}", episode.name)),
-                        )
-                        .when(is_next, |this| {
-                            this.child(
-                                div()
-                                    .px_2()
-                                    .py(px(2.))
-                                    .rounded_full()
-                                    .bg(accent)
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(on_color(accent))
-                                    .child("UP NEXT"),
-                            )
-                        }),
+                        .text_size(px(17.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .truncate()
+                        .child(format!("{number}{}", episode.name)),
                 )
-                .when(!facts.is_empty(), |this| {
+                .when(is_next, |this| {
                     this.child(
                         div()
-                            .text_sm()
-                            .text_color(Palette::text_tertiary())
-                            .child(facts.join(" · ")),
-                    )
-                })
-                .when_some(episode.overview.clone(), |this, overview| {
-                    this.child(
-                        div()
-                            .max_w(px(820.))
-                            .text_sm()
-                            .line_height(px(21.))
-                            .text_color(Palette::text_secondary())
-                            .line_clamp(2)
-                            .text_ellipsis()
-                            .child(overview),
+                            .px_2()
+                            .py(px(2.))
+                            .rounded_full()
+                            .bg(accent)
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(on_color(accent))
+                            .child("UP NEXT"),
                     )
                 }),
-        );
+        )
+        .when(!facts.is_empty(), |this| {
+            this.child(
+                div()
+                    .text_sm()
+                    .text_color(Palette::text_tertiary())
+                    .child(facts.join(" · ")),
+            )
+        })
+        .when_some(episode.overview.clone(), |this, overview| {
+            this.child(
+                div()
+                    .max_w(px(820.))
+                    .text_sm()
+                    .line_height(px(21.))
+                    .text_color(Palette::text_secondary())
+                    .line_clamp(2)
+                    .text_ellipsis()
+                    .child(overview),
+            )
+        });
+    let (rest, active) = if is_next {
+        (accent.opacity(0.08), accent.opacity(0.14))
+    } else {
+        (gpui_kit::transparent_black(), Palette::glass().into())
+    };
+
+    let row = pressable(group.clone())
+        .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
+        .look(move |this, m| {
+            this.relative()
+                .flex()
+                .items_start()
+                .gap_5()
+                .p_3()
+                .rounded(px(16.))
+                .cursor_pointer()
+                .bg(mix(rest, active, m.amount()))
+                .child(focus_ring(m, px(16.)))
+                .child(thumbnail(m))
+                .child(details)
+        });
     item_menu::attach(row, episode.clone()).into_any_element()
 }
 
@@ -633,6 +647,7 @@ impl Render for SeriesPage {
                 ImageState::Ready { accent, .. } => accent,
                 _ => None,
             })
+            .map(Palette::tune_accent)
             .unwrap_or_else(|| Palette::accent().into());
 
         let hero = self.render_hero(&series, accent, cx);

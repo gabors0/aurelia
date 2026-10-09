@@ -9,7 +9,6 @@ use image::imageops::FilterType;
 /// Widest ambient background we keep; it's blurred beyond recognition anyway.
 const AMBIENT_WIDTH: u32 = 480;
 const AMBIENT_SIGMA: f32 = 22.0;
-const AMBIENT_BRIGHTNESS: f32 = 0.55;
 
 pub fn decode(bytes: &[u8]) -> Option<RgbaImage> {
     image::load_from_memory(bytes)
@@ -25,7 +24,8 @@ pub fn to_render_image(mut image: RgbaImage) -> Arc<RenderImage> {
     Arc::new(RenderImage::new(vec![image::Frame::new(image)]))
 }
 
-/// Small, heavily blurred and darkened copy used as a page's ambient light.
+/// Small, heavily blurred copy used as a page's ambient light. The layers
+/// that show it veil it to suit the theme.
 pub fn ambient(source: &RgbaImage) -> RgbaImage {
     let (w, h) = source.dimensions();
     let small = if w > AMBIENT_WIDTH {
@@ -34,13 +34,7 @@ pub fn ambient(source: &RgbaImage) -> RgbaImage {
     } else {
         source.clone()
     };
-    let mut blurred = image::imageops::fast_blur(&small, AMBIENT_SIGMA);
-    for pixel in blurred.pixels_mut() {
-        for channel in &mut pixel.0[..3] {
-            *channel = (*channel as f32 * AMBIENT_BRIGHTNESS) as u8;
-        }
-    }
-    blurred
+    image::imageops::fast_blur(&small, AMBIENT_SIGMA)
 }
 
 /// A vivid colour from the artwork, tuned to read well on a dark UI.
@@ -82,75 +76,165 @@ pub fn accent(source: &RgbaImage) -> Option<Hsla> {
 }
 
 /// Logo ink farther than this (as a share of the logo's width) from any
-/// visible ink has nothing to show its shape on a dark page.
+/// visible ink has nothing to show its shape against the page.
 const LOGO_REACH: f32 = 0.02;
 /// Share of a logo's ink that must be lost that way before it's recoloured.
 const LOGO_LOST_SHARE: f32 = 0.03;
-/// Share of a dark shape that must be lost for the shape to be lifted.
+/// Share of a faint shape that must be lost for the shape to be recoloured.
 const SHAPE_LOST_SHARE: f32 = 0.6;
-/// What lifted ink becomes: the UI's text colour.
+/// What lifted ink becomes on a dark page: the UI's text colour.
 const LOGO_LIGHT: [f32; 3] = [
     0xF2 as f32 / 255.0,
     0xF3 as f32 / 255.0,
     0xF7 as f32 / 255.0,
 ];
+/// How light lowered ink ends up on a light page.
+const LOGO_DARK_LUMA: f32 = 0.13;
 
 fn luma([r, g, b, _]: [u8; 4]) -> f32 {
     (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32) / 255.0
 }
 
-/// Stands out on a dark page: light, or a bright saturated colour.
-fn is_visible(pixel: [u8; 4]) -> bool {
+/// Saturation (0–1) and brightest channel (0–1).
+fn chroma(pixel: [u8; 4]) -> (f32, f32) {
     let max = pixel[..3].iter().copied().max().unwrap_or(0) as f32 / 255.0;
     let min = pixel[..3].iter().copied().min().unwrap_or(0) as f32 / 255.0;
-    luma(pixel) >= 0.4 || (max >= 0.6 && (max - min) / max >= 0.5)
+    let saturation = if max > 0.0 { (max - min) / max } else { 0.0 };
+    (saturation, max)
 }
+
+/// Stands out on a dark page: light, or a bright saturated colour.
+fn is_visible(pixel: [u8; 4]) -> bool {
+    let (saturation, max) = chroma(pixel);
+    luma(pixel) >= 0.4 || (max >= 0.6 && saturation >= 0.5)
+}
+
+/// Stands out on a light page: dark, or a strong saturated colour.
+fn is_visible_on_light(pixel: [u8; 4]) -> bool {
+    let (saturation, max) = chroma(pixel);
+    luma(pixel) <= 0.6 || (max >= 0.35 && saturation >= 0.5 && luma(pixel) <= 0.72)
+}
+
+/// How a logo is made legible on one kind of page.
+struct LogoRules {
+    /// Ink that reads on this page.
+    visible: fn([u8; 4]) -> bool,
+    /// Ink that vanishes on this page unless something visible outlines it.
+    faint: fn([u8; 4]) -> bool,
+    recolour: fn([u8; 4]) -> [u8; 4],
+    /// Judge a faint shape by its edge (is it outlined?) rather than by how
+    /// much of it is far from visible ink. Faint lettering on a light page is
+    /// the thick fill inside a thin outline, not the outline itself.
+    by_edge: bool,
+}
+
+const ON_DARK: LogoRules = LogoRules {
+    visible: is_visible,
+    faint: |p| luma(p) < 0.25 && !is_visible(p),
+    recolour: lift_pixel,
+    by_edge: false,
+};
+
+const ON_LIGHT: LogoRules = LogoRules {
+    visible: is_visible_on_light,
+    faint: |p| luma(p) > 0.75 && !is_visible_on_light(p),
+    recolour: lower_pixel,
+    by_edge: true,
+};
+
+/// Share of a faint shape's edge that visible ink must line for the shape to
+/// count as outlined.
+const OUTLINED_SHARE: f32 = 0.5;
 
 /// A logo made for light backgrounds, such as black lettering, vanishes on
 /// the hero's dark fade. Dark shapes that nothing visible outlines are lifted
 /// to a light tint of their colour. Dark outlines, shadows and details on
 /// light ink are left alone.
-pub fn legible_logo(mut logo: RgbaImage) -> RgbaImage {
+pub fn legible_logo(logo: RgbaImage) -> RgbaImage {
+    rework_logo(logo, &ON_DARK)
+}
+
+/// The light theme's counterpart of [`legible_logo`]: white lettering that
+/// nothing dark outlines is lowered to a dark shade of its colour.
+pub fn legible_logo_on_light(logo: RgbaImage) -> RgbaImage {
+    rework_logo(logo, &ON_LIGHT)
+}
+
+fn rework_logo(mut logo: RgbaImage, rules: &LogoRules) -> RgbaImage {
     let (width, height) = (logo.width() as usize, logo.height() as usize);
     let pixels: Vec<[u8; 4]> = logo.pixels().map(|pixel| pixel.0).collect();
     let solid = |pixel: &[u8; 4]| pixel[3] > 127;
-    let visible: Vec<bool> = pixels.iter().map(|p| solid(p) && is_visible(*p)).collect();
-    let dark: Vec<bool> = pixels
+    let visible: Vec<bool> = pixels
         .iter()
-        .map(|p| solid(p) && luma(*p) < 0.25 && !is_visible(*p))
+        .map(|p| solid(p) && (rules.visible)(*p))
+        .collect();
+    let faint: Vec<bool> = pixels
+        .iter()
+        .map(|p| solid(p) && (rules.faint)(*p))
         .collect();
     let reach = ((width as f32 * LOGO_REACH).round() as usize).max(2);
     let near_visible = spread(&visible, width, height, reach);
     let lost: Vec<bool> = (0..pixels.len())
-        .map(|i| dark[i] && !near_visible[i])
+        .map(|i| faint[i] && !near_visible[i])
         .collect();
 
     let ink = pixels.iter().filter(|p| solid(p)).count();
-    let lost_ink = lost.iter().filter(|&&lost| lost).count();
-    if ink == 0 || (lost_ink as f32) < ink as f32 * LOGO_LOST_SHARE {
+    if ink == 0 {
+        return logo;
+    }
+    let (labels, count) = shapes(&faint, width, height);
+    let mut size = vec![0u32; count + 1];
+    let mut lost_in = vec![0u32; count + 1];
+    let (mut edge, mut edge_lined) = (vec![0u32; count + 1], vec![0u32; count + 1]);
+    for (i, &label) in labels.iter().enumerate() {
+        if label == 0 {
+            continue;
+        }
+        let label = label as usize;
+        size[label] += 1;
+        lost_in[label] += lost[i] as u32;
+        let (x, y) = (i % width, i / width);
+        let outside = |nx: Option<usize>, ny: Option<usize>| match (nx, ny) {
+            (Some(nx), Some(ny)) if nx < width && ny < height => labels[ny * width + nx] == 0,
+            _ => true,
+        };
+        if outside(x.checked_sub(1), Some(y))
+            || outside(Some(x + 1), Some(y))
+            || outside(Some(x), y.checked_sub(1))
+            || outside(Some(x), Some(y + 1))
+        {
+            edge[label] += 1;
+            edge_lined[label] += near_visible[i] as u32;
+        }
+    }
+    let is_lost = |label: usize| {
+        if rules.by_edge {
+            (edge_lined[label] as f32) < edge[label] as f32 * OUTLINED_SHARE
+        } else {
+            lost_in[label] as f32 >= size[label] as f32 * SHAPE_LOST_SHARE
+        }
+    };
+    let lost_ink: u32 = if rules.by_edge {
+        (1..=count).filter(|&l| is_lost(l)).map(|l| size[l]).sum()
+    } else {
+        lost.iter().filter(|&&lost| lost).count() as u32
+    };
+    if (lost_ink as f32) < ink as f32 * LOGO_LOST_SHARE {
         return logo;
     }
 
-    // Lift whole shapes, so a letter is never half light and half dark.
-    let (labels, count) = shapes(&dark, width, height);
-    let (mut size, mut lost_in) = (vec![0u32; count + 1], vec![0u32; count + 1]);
-    for (i, &label) in labels.iter().enumerate() {
-        size[label as usize] += 1;
-        lost_in[label as usize] += lost[i] as u32;
-    }
-    let lifted: Vec<bool> = labels
+    // Recolour whole shapes, so a letter is never half one shade and half
+    // the other.
+    let recoloured: Vec<bool> = labels
         .iter()
-        .map(|&label| {
-            label > 0
-                && lost_in[label as usize] as f32 >= size[label as usize] as f32 * SHAPE_LOST_SHARE
-        })
+        .map(|&label| label > 0 && is_lost(label as usize))
         .collect();
     // Take in the shapes' soft edges and the transparent pixels around them,
-    // which texture filtering would otherwise blend in as a dark fringe.
-    let lifted = spread(&lifted, width, height, 2);
-    for (pixel, lift) in logo.pixels_mut().zip(lifted) {
-        if lift {
-            pixel.0 = lift_pixel(pixel.0);
+    // which texture filtering would otherwise blend in as a fringe.
+    let recoloured = spread(&recoloured, width, height, 2);
+    for (pixel, recolour) in logo.pixels_mut().zip(recoloured) {
+        if recolour {
+            pixel.0 = (rules.recolour)(pixel.0);
         }
     }
     logo
@@ -182,6 +266,22 @@ fn lift_pixel(pixel: [u8; 4]) -> [u8; 4] {
         out[channel] = ((c + (light * tint - c) * amount) * 255.0).round() as u8;
     }
     out[3] = a;
+    out
+}
+
+/// Light colours become a dark shade of themselves; dark ones are kept.
+fn lower_pixel(pixel: [u8; 4]) -> [u8; 4] {
+    let lightness = luma(pixel);
+    let amount = ((lightness - 0.55) / 0.2).clamp(0.0, 1.0);
+    if amount == 0.0 {
+        return pixel;
+    }
+    let scale = LOGO_DARK_LUMA / lightness.max(0.01);
+    let mut out = pixel;
+    for channel in &mut out[..3] {
+        let c = *channel as f32 / 255.0;
+        *channel = ((c + (c * scale - c) * amount) * 255.0).round() as u8;
+    }
     out
 }
 
@@ -295,12 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn ambient_is_downscaled_and_darker() {
+    fn ambient_is_downscaled_and_keeps_its_brightness() {
         let source = solid(1920, 1080, [200, 180, 160, 255]);
         let out = ambient(&source);
         assert!(out.width() <= AMBIENT_WIDTH);
         assert_eq!(out.width() * 1080 / 1920, out.height());
-        assert!(mean_luma(&out) < mean_luma(&source) * 0.7);
+        assert!((mean_luma(&out) - mean_luma(&source)).abs() < mean_luma(&source) * 0.03);
     }
 
     #[test]
@@ -420,6 +520,40 @@ mod tests {
         assert_eq!(legible_logo(logo), before);
         let empty = RgbaImage::new(8, 8);
         assert_eq!(legible_logo(empty.clone()), empty);
+    }
+
+    #[test]
+    fn on_light_white_lettering_is_lowered() {
+        // A white word beside an orange bar.
+        let mut logo = RgbaImage::new(400, 100);
+        fill(&mut logo, 0..400, 0..20, ORANGE);
+        fill(&mut logo, 40..200, 50..90, WHITE);
+        let out = legible_logo_on_light(logo);
+        assert!(luma_of(out.get_pixel(120, 70)) < 0.2, "word lowered");
+        assert_eq!(out.get_pixel(10, 10).0, ORANGE, "colour untouched");
+    }
+
+    #[test]
+    fn on_light_outlined_or_dark_logos_are_untouched() {
+        // White letters in a black outline read on a light page too.
+        let mut outlined = RgbaImage::new(400, 100);
+        fill(&mut outlined, 20..380, 20..80, BLACK);
+        fill(&mut outlined, 26..374, 26..74, WHITE);
+        let before = outlined.clone();
+        assert_eq!(legible_logo_on_light(outlined), before);
+        let mut dark = RgbaImage::new(200, 60);
+        fill(&mut dark, 40..160, 20..40, BLACK);
+        let before = dark.clone();
+        assert_eq!(legible_logo_on_light(dark), before);
+    }
+
+    #[test]
+    fn on_light_lowering_keeps_a_hint_of_hue() {
+        let mut logo = RgbaImage::new(200, 60);
+        fill(&mut logo, 40..160, 20..40, [250, 240, 170, 255]);
+        let pixel = *legible_logo_on_light(logo).get_pixel(100, 30);
+        assert!(luma_of(&pixel) < 0.2, "lowered: {pixel:?}");
+        assert!(pixel[0] > pixel[2], "still warm: {pixel:?}");
     }
 
     #[test]

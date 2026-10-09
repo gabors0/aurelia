@@ -3,10 +3,9 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Icon;
 use gpui_kit::prelude::*;
-use gpui_kit::{
-    AnyElement, FontWeight, Pixels, ScrollHandle, SharedString, div, hsla, point, px, rgba,
-};
+use gpui_kit::{AnyElement, FontWeight, Pixels, ScrollHandle, SharedString, div, point, px};
 
+use crate::components::key_nav;
 use crate::theme::{FONT_DISPLAY, Palette};
 use gpui_kit::TestSupportExt as _;
 
@@ -53,10 +52,10 @@ fn arrow(
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(rgba(0x0A0B10CC))
+                .bg(Palette::control())
                 .border_1()
-                .border_color(hsla(0., 0., 1., 0.18))
-                .hover(|this| this.bg(rgba(0x22232ECC)))
+                .border_color(Palette::control_border())
+                .hover(|this| this.bg(Palette::control_hover()))
                 .child(Icon::new(icon).size_5().text_color(Palette::text())),
         )
 }
@@ -74,7 +73,9 @@ pub fn row(
     div()
         .flex()
         .flex_col()
-        .gap_3()
+        // Cards rise into the space above them on hover; the padding inside
+        // the shelf keeps them from being clipped.
+        .gap_1p5()
         .child(
             div()
                 .px(ROW_PADDING)
@@ -87,13 +88,14 @@ pub fn row(
             div()
                 .group(group.clone())
                 .relative()
+                .child(key_nav::shelf(handle.clone()))
                 .child(
                     div()
                         .id(id.clone())
                         .flex()
                         .gap_4()
                         .px(ROW_PADDING)
-                        .pt_1()
+                        .pt(px(10.))
                         .pb_3()
                         .overflow_x_scroll()
                         // Without this GPUI turns vertical wheel motion into
@@ -129,7 +131,7 @@ pub fn skeleton_row(width: Pixels, height: Pixels) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .gap_3()
+        .gap_4()
         .px(ROW_PADDING)
         .child(
             div()

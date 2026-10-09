@@ -127,7 +127,10 @@ impl RenderOnce for Aurora {
                     img(ImageSource::Render(image))
                         .absolute()
                         .object_fit(ObjectFit::Fill)
-                        .opacity(LIGHTS[index].opacity)
+                        .opacity(
+                            LIGHTS[index].opacity
+                                * if crate::theme::is_light() { 0.7 } else { 1.0 },
+                        )
                         .with_animation(
                             ("aurora", index),
                             Animation::new(Duration::from_secs(48))

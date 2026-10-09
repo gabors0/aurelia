@@ -9,6 +9,12 @@ impl Client {
         self.get_json("System/Info/Public", &[]).await
     }
 
+    /// Users the server lists on its sign-in screen (unauthenticated). Users
+    /// hidden from the sign-in screen aren't included.
+    pub async fn public_users(&self) -> Result<Vec<User>> {
+        self.get_json("Users/Public", &[]).await
+    }
+
     pub async fn me(&self) -> Result<User> {
         self.get_json("Users/Me", &[]).await
     }

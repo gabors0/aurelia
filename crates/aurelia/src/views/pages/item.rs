@@ -11,13 +11,14 @@ use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, WeakEntity, Window,
-    div, hsla, px,
+    div, px,
 };
 use jellyfin::{BaseItem, ItemKind, MediaStream, StreamKind};
 
-use crate::components::button::{glass_button, play_button, round_button};
+use crate::components::button::{focus_ring, glass_button, play_button, round_button};
 use crate::components::hero;
 use crate::components::meta;
+use crate::components::motion::pressable;
 use crate::components::poster_card::PosterCard;
 use crate::components::row::{ROW_PADDING, row};
 use crate::format;
@@ -213,19 +214,22 @@ impl ItemPage {
                         |this, series| {
                             let route = series_route.clone();
                             this.child(
-                                div()
-                                    .id("series-link")
-                                    .text_size(px(18.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(accent)
-                                    .cursor_pointer()
-                                    .hover(|this| this.underline())
+                                pressable("series-link")
                                     .when_some(route, |this, route| {
                                         this.on_click(move |_, window, cx| {
                                             shell::navigate(route.clone(), window, cx)
                                         })
                                     })
-                                    .child(series),
+                                    .look(move |this, m| {
+                                        this.relative()
+                                            .text_size(px(18.))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(accent)
+                                            .cursor_pointer()
+                                            .when(m.hovered, |this| this.underline())
+                                            .child(focus_ring(m, px(6.)))
+                                            .child(series)
+                                    }),
                             )
                         },
                     )
@@ -243,7 +247,7 @@ impl ItemPage {
                     .when_some(item.overview.clone(), |this, overview| {
                         this.child(
                             div()
-                                .text_color(hsla(0., 0., 0.86, 1.))
+                                .text_color(Palette::text_body())
                                 .line_height(px(24.))
                                 .line_clamp(4)
                                 .text_ellipsis()
@@ -551,6 +555,7 @@ impl Render for ItemPage {
                 ImageState::Ready { accent, .. } => accent,
                 _ => None,
             })
+            .map(Palette::tune_accent)
             .unwrap_or_else(|| Palette::accent().into());
         let height = (window.viewport_size().height * 0.68).clamp(px(520.), px(780.));
 

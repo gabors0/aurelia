@@ -1,3 +1,4 @@
+mod accounts;
 mod components;
 mod dev;
 mod format;
@@ -7,6 +8,7 @@ mod nav;
 mod playback;
 mod runtime;
 mod session;
+mod settings;
 mod state;
 mod theme;
 mod user_data;
@@ -27,8 +29,11 @@ fn main() {
             theme::init(cx);
             runtime::init(cx);
             state::AppState::init(cx);
+            settings::init(state::AppState::global(cx).store().dir().to_path_buf(), cx);
+            components::key_nav::init(cx);
             images::ImageStore::init(cx);
             views::shell::bind_keys(cx);
+            views::profiles::bind_keys(cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),

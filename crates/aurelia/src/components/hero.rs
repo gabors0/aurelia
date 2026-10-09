@@ -4,7 +4,7 @@
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, ElementId, FontWeight, ObjectFit, Pixels, div, linear_color_stop, linear_gradient,
-    px, rgba,
+    px,
 };
 use jellyfin::{BaseItem, Client};
 
@@ -26,13 +26,13 @@ pub fn backdrop(id: impl Into<ElementId>, request: Option<ImageRequest>) -> impl
         // Left fade for the title block.
         .child(div().absolute().inset_0().bg(linear_gradient(
             90.,
-            linear_color_stop(rgba(0x0A0B10F0), 0.),
-            linear_color_stop(rgba(0x0A0B1000), 0.62),
+            linear_color_stop(Palette::bg_alpha(0.94), 0.),
+            linear_color_stop(Palette::bg_alpha(0.), 0.62),
         )))
         // Bottom fade into the page.
         .child(div().absolute().inset_0().bg(linear_gradient(
             180.,
-            linear_color_stop(rgba(0x0A0B1000), 0.45),
+            linear_color_stop(Palette::bg_alpha(0.), 0.45),
             linear_color_stop(Palette::bg(), 1.),
         )))
         // Top fade under the nav bar.
@@ -45,8 +45,8 @@ pub fn backdrop(id: impl Into<ElementId>, request: Option<ImageRequest>) -> impl
                 .h(px(160.))
                 .bg(linear_gradient(
                     180.,
-                    linear_color_stop(rgba(0x0A0B10B0), 0.),
-                    linear_color_stop(rgba(0x0A0B1000), 1.),
+                    linear_color_stop(Palette::bg_alpha(0.69), 0.),
+                    linear_color_stop(Palette::bg_alpha(0.), 1.),
                 )),
         )
 }

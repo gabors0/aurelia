@@ -7,7 +7,7 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, Window, div, hsla, px,
+    AnyElement, Context, FontWeight, Hsla, ScrollHandle, SharedString, Task, Window, div, px,
 };
 use jellyfin::{BaseItem, ItemsQuery, SortBy, SortOrder, UserData};
 
@@ -193,7 +193,7 @@ impl CollectionPage {
                     .when_some(collection.overview.clone(), |this, overview| {
                         this.child(
                             div()
-                                .text_color(hsla(0., 0., 0.86, 1.))
+                                .text_color(Palette::text_body())
                                 .line_height(px(24.))
                                 .line_clamp(3)
                                 .text_ellipsis()
@@ -321,6 +321,7 @@ impl Render for CollectionPage {
                 ImageState::Ready { accent, .. } => accent,
                 _ => None,
             })
+            .map(Palette::tune_accent)
             .unwrap_or_else(|| Palette::accent().into());
 
         let hero = self.render_hero(&collection, accent, cx);

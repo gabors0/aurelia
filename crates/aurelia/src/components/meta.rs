@@ -4,6 +4,8 @@ use gpui_kit::prelude::*;
 use gpui_kit::{AnyElement, FontWeight, SharedString, div, px};
 use jellyfin::{BaseItem, ItemKind, StreamKind};
 
+use crate::components::button::focus_ring;
+use crate::components::motion::pressable;
 use crate::format;
 use crate::nav::Route;
 use crate::theme::Palette;
@@ -138,14 +140,18 @@ pub fn genre_links(genres: &[String]) -> AnyElement {
         let route = Route::Genre {
             name: genre.clone(),
         };
+        let label = genre.clone();
         row = row.child(
-            div()
-                .id(SharedString::from(format!("genre-{genre}")))
-                .cursor_pointer()
-                .text_color(Palette::text_secondary())
-                .hover(|this| this.text_color(Palette::text()).underline())
+            pressable(SharedString::from(format!("genre-{genre}")))
                 .on_click(move |_, window, cx| shell::navigate(route.clone(), window, cx))
-                .child(genre.clone()),
+                .look(move |this, m| {
+                    this.relative()
+                        .cursor_pointer()
+                        .text_color(m.mix(Palette::text_secondary(), Palette::text()))
+                        .when(m.hovered, |this| this.underline())
+                        .child(focus_ring(m, px(4.)))
+                        .child(label)
+                }),
         );
     }
     row.into_any_element()

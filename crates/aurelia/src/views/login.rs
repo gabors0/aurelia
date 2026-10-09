@@ -25,6 +25,20 @@ pub const DEFAULT_SERVER: &str = "https://jellyfin.gs0.me";
 
 pub enum LoginEvent {
     SignedIn(Session),
+    /// Back to the profile picker or the open account.
+    Back,
+}
+
+/// How sign-in opens.
+#[derive(Default)]
+pub struct LoginOptions {
+    /// Shown above the form (e.g. "Your session has expired").
+    pub notice: Option<SharedString>,
+    /// A known server: probed right away.
+    pub server: Option<String>,
+    pub user: Option<String>,
+    /// Offer a way back (to the picker or the open account).
+    pub can_go_back: bool,
 }
 
 enum Step {
@@ -44,6 +58,9 @@ enum Step {
 
 pub struct LoginView {
     step: Step,
+    /// The device id the new account signs in as (see `Session::device_id`).
+    device_id: String,
+    can_go_back: bool,
     server: Entity<InputState>,
     username: Entity<InputState>,
     password: Entity<InputState>,
@@ -57,8 +74,11 @@ pub struct LoginView {
 impl EventEmitter<LoginEvent> for LoginView {}
 
 impl LoginView {
-    pub fn new(notice: Option<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let from_env = std::env::var("AURELIA_SERVER").ok();
+    pub fn new(options: LoginOptions, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let from_env = options
+            .server
+            .clone()
+            .or_else(|| std::env::var("AURELIA_SERVER").ok());
         let last = from_env
             .clone()
             .or_else(|| AppState::global(cx).store().last_server());
@@ -70,7 +90,12 @@ impl LoginView {
                 .placeholder("jellyfin.example.com")
                 .default_value(server_value)
         });
-        let username = cx.new(|cx| InputState::new(window, cx).placeholder("Username"));
+        let user = options.user.clone().unwrap_or_default();
+        let username = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Username")
+                .default_value(user)
+        });
         let password = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Password")
@@ -86,16 +111,18 @@ impl LoginView {
 
         let mut this = Self {
             step: Step::Server,
+            device_id: AppState::new_device_id(),
+            can_go_back: options.can_go_back,
             server,
             username,
             password,
             busy: false,
             error: None,
-            notice,
+            notice: options.notice,
             _task: None,
             _subscriptions: subscriptions,
         };
-        // Development: a server given in the environment is probed right away.
+        // A known server (or one given in the environment) is probed right away.
         if from_env.is_some() {
             this.probe_server(window, cx);
         }
@@ -144,7 +171,7 @@ impl LoginView {
 
     fn probe_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let address = self.server.read(cx).value().to_string();
-        let client = match AppState::global(cx).anonymous_client(&address) {
+        let client = match AppState::global(cx).anonymous_client(&address, &self.device_id) {
             Ok(client) => client,
             Err(err) => {
                 self.error = Some(describe(&err).into());
@@ -440,6 +467,8 @@ fn session_from(client: &Client, info: &PublicSystemInfo, auth: jellyfin::AuthRe
         user_id: auth.user.id,
         user_name: auth.user.name,
         token: auth.access_token,
+        device_id: Some(client.device().device_id().to_string()),
+        image_tag: auth.user.primary_image_tag,
     }
 }
 
@@ -548,35 +577,43 @@ impl Render for LoginView {
                                     ),
                             )
                             .child(
-                                glass()
-                                    .w(px(420.))
-                                    .p_8()
-                                    .bg(gpui_kit::rgba(0x0F1018C0))
-                                    .child(
-                                        v_flex()
-                                            .gap_4()
-                                            .when_some(self.notice.clone(), |this, notice| {
-                                                this.child(
-                                                    div()
-                                                        .text_sm()
-                                                        .px_3()
-                                                        .py_2()
-                                                        .rounded(px(10.))
-                                                        .bg(gpui_kit::rgba(0xB69CFF22))
-                                                        .child(notice),
-                                                )
-                                            })
-                                            .child(body)
-                                            .when_some(self.error.clone(), |this, error| {
-                                                this.child(
-                                                    div()
-                                                        .text_sm()
-                                                        .text_color(Palette::danger())
-                                                        .child(error),
-                                                )
-                                            }),
-                                    ),
-                            ),
+                                glass().w(px(420.)).p_8().bg(Palette::panel()).child(
+                                    v_flex()
+                                        .gap_4()
+                                        .when_some(self.notice.clone(), |this, notice| {
+                                            this.child(
+                                                div()
+                                                    .text_sm()
+                                                    .px_3()
+                                                    .py_2()
+                                                    .rounded(px(10.))
+                                                    .bg(gpui_kit::Hsla::from(Palette::accent())
+                                                        .opacity(0.14))
+                                                    .child(notice),
+                                            )
+                                        })
+                                        .child(body)
+                                        .when_some(self.error.clone(), |this, error| {
+                                            this.child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(Palette::danger())
+                                                    .child(error),
+                                            )
+                                        }),
+                                ),
+                            )
+                            .when(self.can_go_back, |this| {
+                                this.child(
+                                    Button::new("login-back")
+                                        .ghost()
+                                        .icon(gpui_kit::assets::IconName::ChevronLeft)
+                                        .label("Back")
+                                        .on_click(
+                                            cx.listener(|_, _, _, cx| cx.emit(LoginEvent::Back)),
+                                        ),
+                                )
+                            }),
                     ),
             )
     }
