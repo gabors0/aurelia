@@ -186,6 +186,17 @@ impl Client {
         self.get_json("Items", &query).await
     }
 
+    /// How many items match `query` (its paging is ignored). Genre lists
+    /// carry counts of their own, but some servers count every title there.
+    pub async fn count(&self, query: &ItemsQuery) -> Result<u32> {
+        let query = ItemsQuery {
+            start_index: 0,
+            limit: 1,
+            ..query.clone()
+        };
+        Ok(self.items(&query).await?.total_record_count)
+    }
+
     /// Full details, including media sources, people and user data.
     pub async fn item(&self, id: &str) -> Result<BaseItem> {
         self.get_json(&format!("Items/{id}"), &self.user_query()?)

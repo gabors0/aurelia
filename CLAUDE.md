@@ -61,6 +61,7 @@ How the app fits together:
 - Semi-transparent overlays above text let the text show through far more than their alpha suggests (the transparent window background); keep bars that cover scrolled text fully opaque.
 - Stretched textures can show seams at their edges on some setups; keep generated gradient images larger than the area they light (`components/aurora.rs`).
 - gpui-component's root already wraps the window in `window_border` for client-side decorations; don't add another.
+- `TitleBar` starts a window move when the pointer moves while pressed anywhere inside it. On KWin that move takes the pointer and the click is lost, so wrap clickable things in the nav with `controls()` (`views/shell.rs`), which stops the press from reaching the bar. Headless sway ignores move requests for tiled windows, so it can't reproduce this.
 - Use `gpui_kit::assets::AllAssets` and `gpui_kit::assets::IconName` for the full Lucide icon set.
 - UI integration tests use `#[gpui_kit::test]` with `gpui_kit::test::TestWindowExt`; mark elements to target with `.test_support()` (a no-op outside tests). See `components/row.rs`.
 

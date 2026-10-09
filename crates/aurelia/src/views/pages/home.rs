@@ -307,7 +307,6 @@ impl HomePage {
             )
             .into(),
             (_, true) => "Resume".into(),
-            (ItemKind::Series, false) => "Watch now".into(),
             _ => "Play".into(),
         };
         let route = Route::for_item(item);

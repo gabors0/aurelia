@@ -178,9 +178,6 @@ pub struct BaseItem {
     pub index_number_end: Option<i32>,
     pub parent_index_number: Option<i32>,
     pub child_count: Option<i32>,
-    /// For genres: how many movies and shows use it.
-    pub movie_count: Option<i32>,
-    pub series_count: Option<i32>,
 
     pub user_data: Option<UserData>,
     #[serde(deserialize_with = "nullable")]

@@ -33,6 +33,8 @@ const DEBOUNCE: Duration = Duration::from_millis(250);
 const PER_SHELF: u32 = 24;
 const TILE_MIN_WIDTH: f32 = 220.;
 const TILE_GAP: f32 = 16.;
+/// Genre counts requested at once.
+const COUNTS_AT_ONCE: usize = 8;
 
 /// Shelves in the order they're shown.
 const SHELVES: [(Shelf, &str); 5] = [
@@ -129,10 +131,13 @@ pub struct SearchPage {
     results: Loadable<Results>,
     searching: bool,
     genres: Loadable<Vec<BaseItem>>,
+    /// Movies and shows per genre, counted after the genres arrive.
+    genre_counts: HashMap<String, u32>,
     scroll: ScrollHandle,
     rows: HashMap<Shelf, ScrollHandle>,
     _search: Option<Task<()>>,
     _genres: Option<Task<()>>,
+    _counts: Option<Task<()>>,
     _input: Subscription,
 }
 
@@ -148,6 +153,7 @@ impl SearchPage {
             results: Loadable::Ready(Results::default()),
             searching: false,
             genres: Loadable::Loading,
+            genre_counts: HashMap::new(),
             scroll: ScrollHandle::new(),
             rows: SHELVES
                 .iter()
@@ -155,6 +161,7 @@ impl SearchPage {
                 .collect(),
             _search: None,
             _genres: None,
+            _counts: None,
             _input: subscription,
         };
         this.load_genres(cx);
@@ -191,7 +198,25 @@ impl SearchPage {
                 if let Err(err) = &result {
                     shell::load_failed(err, cx);
                 }
+                if let Ok(genres) = &result {
+                    let names = genres.iter().map(|g| g.name.clone()).collect();
+                    this.load_genre_counts(names, cx);
+                }
                 this.genres = Loadable::from_result(result);
+                cx.notify();
+            })
+            .ok();
+        }));
+    }
+
+    fn load_genre_counts(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
+        let fetch = runtime::run(cx, genre_counts(AppState::client(cx), names));
+        self._counts = Some(cx.spawn(async move |this, cx| {
+            let Some(counts) = fetch.await else {
+                return;
+            };
+            this.update(cx, |this, cx| {
+                this.genre_counts = counts;
                 cx.notify();
             })
             .ok();
@@ -408,7 +433,12 @@ impl SearchPage {
             let request = genre
                 .primary_image()
                 .map(|image| ImageRequest::for_image(&client, &image, 480).ambient());
-            genre_tile(genre, request, px(width))
+            genre_tile(
+                genre,
+                self.genre_counts.get(&genre.name).copied(),
+                request,
+                px(width),
+            )
         });
         vec![
             v_flex()
@@ -427,18 +457,44 @@ impl SearchPage {
     }
 }
 
-/// Movies and shows in a genre (its child count includes episodes).
-fn title_count(genre: &BaseItem) -> Option<i32> {
-    let titles = match (genre.movie_count, genre.series_count) {
-        (None, None) => genre.child_count,
-        (movies, shows) => Some(movies.unwrap_or(0) + shows.unwrap_or(0)),
-    };
-    titles.filter(|n| *n > 0)
+/// Counts the movies and shows in each genre, a few requests at a time.
+async fn genre_counts(client: jellyfin::Client, names: Vec<String>) -> HashMap<String, u32> {
+    let mut counts = HashMap::new();
+    for chunk in names.chunks(COUNTS_AT_ONCE) {
+        let mut requests = tokio::task::JoinSet::new();
+        for name in chunk {
+            let client = client.clone();
+            let name = name.clone();
+            requests.spawn(async move {
+                let query = ItemsQuery {
+                    include_item_types: vec![ItemKind::Movie, ItemKind::Series],
+                    genres: vec![name.clone()],
+                    ..ItemsQuery::default()
+                };
+                client.count(&query).await.ok().map(|n| (name, n))
+            });
+        }
+        while let Some(done) = requests.join_next().await {
+            if let Ok(Some((name, n))) = done {
+                counts.insert(name, n);
+            }
+        }
+    }
+    counts
+}
+
+fn titles_label(count: u32) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("1 title".into()),
+        n => Some(format!("{n} titles")),
+    }
 }
 
 /// A genre as a tile of colour taken from its artwork.
 fn genre_tile(
     genre: &BaseItem,
+    titles: Option<u32>,
     request: Option<ImageRequest>,
     width: gpui_kit::Pixels,
 ) -> AnyElement {
@@ -446,13 +502,7 @@ fn genre_tile(
     let route = Route::Genre {
         name: genre.name.clone(),
     };
-    let count = title_count(genre).map(|n| {
-        if n == 1 {
-            "1 title".to_string()
-        } else {
-            format!("{n} titles")
-        }
-    });
+    let count = titles.and_then(titles_label);
     div()
         .id(group.clone())
         .group(group.clone())
@@ -578,19 +628,10 @@ mod tests {
     }
 
     #[test]
-    fn genre_counts_leave_out_episodes() {
-        let genre: BaseItem = serde_json::from_value(serde_json::json!({
-            "Id": "g", "Name": "Drama", "Type": "Genre",
-            "ChildCount": 9, "MovieCount": 2, "SeriesCount": 1
-        }))
-        .unwrap();
-        assert_eq!(title_count(&genre), Some(3));
-        let old_server = BaseItem {
-            child_count: Some(4),
-            ..Default::default()
-        };
-        assert_eq!(title_count(&old_server), Some(4));
-        assert_eq!(title_count(&BaseItem::default()), None);
+    fn genre_tiles_count_titles() {
+        assert_eq!(titles_label(0), None);
+        assert_eq!(titles_label(1).as_deref(), Some("1 title"));
+        assert_eq!(titles_label(36).as_deref(), Some("36 titles"));
     }
 
     #[test]

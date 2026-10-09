@@ -448,24 +448,26 @@ impl Shell {
                                         .gap_2()
                                         .when(can_go_back, |this| {
                                             this.child(
-                                                Button::new("back")
-                                                    .ghost()
-                                                    .small()
-                                                    .icon(icon::ChevronLeft)
-                                                    .tooltip("Back (Esc)")
-                                                    .on_click(cx.listener(
-                                                        |this, _, window, cx| {
-                                                            this.back(&Back, window, cx)
-                                                        },
-                                                    )),
+                                                controls(div()).child(
+                                                    Button::new("back")
+                                                        .ghost()
+                                                        .small()
+                                                        .icon(icon::ChevronLeft)
+                                                        .tooltip("Back (Esc)")
+                                                        .on_click(cx.listener(
+                                                            |this, _, window, cx| {
+                                                                this.back(&Back, window, cx)
+                                                            },
+                                                        )),
+                                                ),
                                             )
                                         })
                                         .child(logo::small()),
                                 )
-                                .child(tabs),
+                                .child(controls(tabs)),
                         )
                         .child(
-                            h_flex()
+                            controls(h_flex())
                                 .gap_2()
                                 .child(self.render_search(cx))
                                 .child(self.render_refresh(cx))
@@ -474,6 +476,14 @@ impl Shell {
                 ),
             )
     }
+}
+
+/// Keeps presses on the nav's controls to themselves. The title bar around
+/// them starts a window move when the pointer moves while pressed; KWin then
+/// takes the pointer, so the release never arrives and the click is lost.
+/// Clicks still work: an element's own click handler sees the press first.
+fn controls(element: gpui_kit::Div) -> gpui_kit::Div {
+    element.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
 /// The user's initial in a circle; opens the account menu.
@@ -549,11 +559,11 @@ mod tests {
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{
         AppContext as _, Bounds, Context, InteractiveElement as _, IntoElement, ParentElement as _,
-        Render, Styled as _, TestAppContext, TestSupportExt as _, Window, WindowBounds,
-        WindowOptions, div, px, size,
+        Render, StatefulInteractiveElement as _, Styled as _, TestAppContext, TestSupportExt as _,
+        Window, WindowBounds, WindowOptions, div, px, size,
     };
 
-    use super::{STALE_AFTER, account_button, is_stale};
+    use super::{STALE_AFTER, account_button, controls, is_stale};
 
     struct Account;
 
@@ -596,6 +606,62 @@ mod tests {
             );
         })
         .unwrap();
+    }
+
+    /// A title bar stand-in that counts presses reaching it, around a tab.
+    struct Bar {
+        presses: std::rc::Rc<std::cell::Cell<usize>>,
+        clicks: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl Render for Bar {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let presses = self.presses.clone();
+            let clicks = self.clicks.clone();
+            div()
+                .size_full()
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, _, _| {
+                    presses.set(presses.get() + 1)
+                })
+                .child(
+                    controls(div()).child(
+                        div()
+                            .id("tab")
+                            .size(px(80.))
+                            .on_click(move |_, _, _| clicks.set(clicks.get() + 1))
+                            .test_support(),
+                    ),
+                )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn nav_controls_click_without_arming_a_window_drag(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let presses = std::rc::Rc::new(std::cell::Cell::new(0));
+        let clicks = std::rc::Rc::new(std::cell::Cell::new(0));
+        let (window, _) = cx.update(|cx| {
+            let (presses, clicks) = (presses.clone(), clicks.clone());
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(400.), px(200.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| cx.new(|_| Bar { presses, clicks }),
+            )
+            .expect("open test window")
+        });
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.click("tab", cx);
+        })
+        .unwrap();
+        assert_eq!(clicks.get(), 1, "the tab still gets its click");
+        assert_eq!(presses.get(), 0, "the title bar never sees the press");
     }
 
     #[test]

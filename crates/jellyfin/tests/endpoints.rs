@@ -132,6 +132,26 @@ async fn blank_search_term_is_left_out() {
 }
 
 #[tokio::test]
+async fn count_asks_for_one_item_and_reads_the_total() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/Items"))
+        .and(query_param("genres", "Horror"))
+        .and(query_param("startIndex", "0"))
+        .and(query_param("limit", "1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(fixture("items_movies.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let query = ItemsQuery {
+        genres: vec!["Horror".into()],
+        start_index: 200,
+        ..Default::default()
+    };
+    assert_eq!(client(&server.uri()).count(&query).await.unwrap(), 11);
+}
+
+#[tokio::test]
 async fn persons_search() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -165,8 +185,6 @@ async fn genres_for_a_library() {
         .unwrap();
     assert_eq!(genres[0].name, "Action");
     assert_eq!(genres[0].kind, ItemKind::Genre);
-    assert_eq!(genres[0].movie_count, Some(1));
-    assert_eq!(genres[0].series_count, Some(0));
 }
 
 #[tokio::test]
