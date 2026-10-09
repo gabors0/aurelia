@@ -53,7 +53,7 @@ pub fn backdrop(id: impl Into<ElementId>, request: Option<ImageRequest>) -> impl
 
 pub fn logo_request(client: &Client, item: &BaseItem) -> Option<ImageRequest> {
     item.logo_image()
-        .map(|logo| ImageRequest::for_image(client, &logo, 800))
+        .map(|logo| ImageRequest::for_image(client, &logo, 800).logo())
 }
 
 /// A title logo sized to its own aspect ratio and pinned left.

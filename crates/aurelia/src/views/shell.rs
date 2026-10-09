@@ -316,12 +316,6 @@ impl Shell {
             .session()
             .map(|s| (s.user_name.clone(), s.server_name.clone()))
             .unwrap_or_default();
-        let initial: SharedString = user
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().to_string())
-            .unwrap_or_default()
-            .into();
         let can_go_back = self.nav.can_go_back();
         let scrolled = self.nav.page().scroll_offset(cx) < px(-24.);
         let _ = window;
@@ -394,44 +388,52 @@ impl Shell {
                                 .child(tabs),
                         )
                         .child(
-                            h_flex().gap_2().child(self.render_refresh(cx)).child(
-                                Button::new("account")
-                                    .ghost()
-                                    .small()
-                                    .child(
-                                        div()
-                                            .size_7()
-                                            .rounded_full()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .bg(rgba(0xB69CFF40))
-                                            .text_color(Palette::text())
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_sm()
-                                            .child(initial),
-                                    )
-                                    .dropdown_menu_with_anchor(
-                                        gpui_kit::Anchor::TopRight,
-                                        move |menu, _, _| {
-                                            menu.label(format!("{user} · {server}"))
-                                                .separator()
-                                                .item(
-                                                    PopupMenuItem::new("Sign out")
-                                                        .icon(icon::LogOut)
-                                                        .on_click(|_, _, cx| {
-                                                            with_shell(cx, |_, cx| {
-                                                                cx.emit(ShellEvent::SignOut)
-                                                            })
-                                                        }),
-                                                )
-                                        },
-                                    ),
-                            ),
+                            h_flex()
+                                .gap_2()
+                                .child(self.render_refresh(cx))
+                                .child(account_button(user, server)),
                         ),
                 ),
             )
     }
+}
+
+/// The user's initial in a circle; opens the account menu.
+fn account_button(user: String, server: String) -> impl IntoElement {
+    let initial: SharedString = user
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default()
+        .into();
+    Button::new("account")
+        .ghost()
+        .small()
+        // A button with content is sized and rounded like a text button;
+        // make it the avatar's circle so hover and clicks match what you see.
+        .size_8()
+        .p_0()
+        .rounded_full()
+        .child(
+            div()
+                .size_7()
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rgba(0xB69CFF40))
+                .text_color(Palette::text())
+                .font_weight(FontWeight::BOLD)
+                .text_sm()
+                .child(initial),
+        )
+        .dropdown_menu_with_anchor(gpui_kit::Anchor::TopRight, move |menu, _, _| {
+            menu.label(format!("{user} · {server}")).separator().item(
+                PopupMenuItem::new("Sign out")
+                    .icon(icon::LogOut)
+                    .on_click(|_, _, cx| with_shell(cx, |_, cx| cx.emit(ShellEvent::SignOut))),
+            )
+        })
 }
 
 impl Render for Shell {
@@ -465,7 +467,57 @@ impl Render for Shell {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{STALE_AFTER, is_stale};
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        AppContext as _, Bounds, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+        Render, Styled as _, TestAppContext, TestSupportExt as _, Window, WindowBounds,
+        WindowOptions, div, px, size,
+    };
+
+    use super::{STALE_AFTER, account_button, is_stale};
+
+    struct Account;
+
+    impl Render for Account {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(
+                div()
+                    .id("account-slot")
+                    .test_support()
+                    .absolute()
+                    .child(account_button("user".into(), "server".into())),
+            )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn account_button_is_the_avatar_circle(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let (window, _) = cx.update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(400.), px(200.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| cx.new(|_| Account),
+            )
+            .expect("open test window")
+        });
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            let bounds = window.find("account-slot").bounds();
+            assert_eq!(
+                bounds.size,
+                size(px(32.), px(32.)),
+                "hit area hugs the avatar"
+            );
+        })
+        .unwrap();
+    }
 
     #[test]
     fn data_goes_stale_after_two_minutes() {

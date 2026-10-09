@@ -26,6 +26,8 @@ pub enum ImageStyle {
     Plain,
     /// Blurred, darkened ambient light; also yields the accent colour.
     Ambient,
+    /// A title logo, with dark lettering lifted so it reads on dark art.
+    Logo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,6 +66,11 @@ impl ImageRequest {
 
     pub fn ambient(mut self) -> Self {
         self.style = ImageStyle::Ambient;
+        self
+    }
+
+    pub fn logo(mut self) -> Self {
+        self.style = ImageStyle::Logo;
         self
     }
 
@@ -232,6 +239,7 @@ impl ImageStore {
                                 let accent = decode::accent(&image);
                                 (decode::ambient(&image), accent)
                             }
+                            ImageStyle::Logo => (decode::legible_logo(image), None),
                         })
                     })
                     .await
