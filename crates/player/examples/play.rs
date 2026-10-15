@@ -1,7 +1,11 @@
 //! Plays a URL through `MpvPlayer` and prints the events — a manual check
 //! of the IPC flow.
 //!
-//! cargo run -p player --example play -- <url> [header] [start-secs] [subtitle-url]
+//! AURELIA_PLAY_HEADER='Authorization: …' \
+//!     cargo run -p player --example play -- <url> [start-secs] [subtitle-url]
+//!
+//! The header comes from the environment: a command line is visible to every
+//! user on the machine.
 
 use std::time::Duration;
 
@@ -11,9 +15,12 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let url = args
         .next()
-        .expect("usage: play <url> [header] [start] [subtitle-url]");
+        .expect("usage: play <url> [start] [subtitle-url]");
     let mut request = PlayRequest::new(url, "player example");
-    if let Some(header) = args.next().filter(|h| !h.is_empty()) {
+    if let Some(header) = std::env::var("AURELIA_PLAY_HEADER")
+        .ok()
+        .filter(|h| !h.is_empty())
+    {
         request.http_headers.push(header);
     }
     if let Some(start) = args.next().and_then(|s| s.parse::<f64>().ok()) {

@@ -1,4 +1,4 @@
-mod ipc;
+pub(crate) mod ipc;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -11,9 +11,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use self::ipc::{EventTranslator, OBSERVE_PAUSE, OBSERVE_TIME_POS, encode_command};
+use self::ipc::{EventTranslator, OBSERVED, encode_command};
+use crate::control::{self, sub_add};
 use crate::{
-    ExternalSub, PlayRequest, PlaybackControl, PlaybackHandle, Player, PlayerError, PlayerEvent,
+    Control, PlayRequest, PlaybackControl, PlaybackHandle, Player, PlayerError, PlayerEvent,
     TrackChoice,
 };
 
@@ -74,6 +75,13 @@ impl MpvPlayer {
         if !request.start.is_zero() {
             command.arg(format!("--start={:.3}", request.start.as_secs_f64()));
         }
+        if let Some(volume) = request.volume {
+            command.arg(format!("--volume={:.0}", volume.level.clamp(0.0, 100.0)));
+            command.arg(format!(
+                "--mute={}",
+                if volume.muted { "yes" } else { "no" }
+            ));
+        }
         if let Some(aid) = track_arg(request.audio) {
             command.arg(format!("--aid={aid}"));
         }
@@ -96,11 +104,7 @@ impl MpvPlayer {
 }
 
 fn track_arg(choice: TrackChoice) -> Option<String> {
-    match choice {
-        TrackChoice::Auto => None,
-        TrackChoice::Off => Some("no".into()),
-        TrackChoice::Id(id) => Some(id.to_string()),
-    }
+    (choice != TrackChoice::Auto).then(|| control::track(choice))
 }
 
 fn socket_path() -> PathBuf {
@@ -193,9 +197,14 @@ impl MpvControl {
 
 impl PlaybackControl for MpvControl {
     fn stop(&self) {
-        if !self.send(&[json!("quit")]) {
+        if !MpvControl::send(self, &[json!("quit")]) {
             let _ = self.child.lock().unwrap().kill();
         }
+    }
+
+    fn send(&self, control: Control) {
+        let words = control::command(&control);
+        MpvControl::send(self, &words.iter().map(|w| json!(w)).collect::<Vec<_>>());
     }
 }
 
@@ -265,16 +274,9 @@ impl Session {
         }
 
         let control = &self.control;
-        control.send(&[
-            json!("observe_property"),
-            json!(OBSERVE_TIME_POS),
-            json!("time-pos"),
-        ]);
-        control.send(&[
-            json!("observe_property"),
-            json!(OBSERVE_PAUSE),
-            json!("pause"),
-        ]);
+        for (id, name) in OBSERVED {
+            control.send(&[json!("observe_property"), json!(id), json!(name)]);
+        }
         for header in &self.request.http_headers {
             // `change-list append` adds one entry verbatim; `set` would split
             // the value on commas.
@@ -302,7 +304,8 @@ impl Session {
             let reaction = translator.on_message(&message);
             if reaction.file_loaded {
                 for sub in &self.request.external_subtitles {
-                    control.send(&sub_add(sub));
+                    let words = sub_add(sub);
+                    control.send(&words.iter().map(|w| json!(w)).collect::<Vec<_>>());
                 }
             }
             for event in reaction.events {
@@ -325,15 +328,4 @@ impl Session {
             std::thread::sleep(Duration::from_millis(25));
         }
     }
-}
-
-fn sub_add(sub: &ExternalSub) -> Vec<Value> {
-    let flag = if sub.select { "select" } else { "auto" };
-    vec![
-        json!("sub-add"),
-        json!(sub.url),
-        json!(flag),
-        json!(sub.title.clone().unwrap_or_default()),
-        json!(sub.lang.clone().unwrap_or_default()),
-    ]
 }

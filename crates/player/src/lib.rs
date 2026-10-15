@@ -1,8 +1,10 @@
-//! Plays media in an external player and reports what happens.
+//! Plays media with mpv and reports what happens.
 //!
-//! [`Player`] is the seam for alternative backends (an embedded libmpv
-//! renderer later); [`MpvPlayer`] drives a standalone mpv over JSON IPC.
+//! [`MpvPlayer`] drives a standalone mpv over JSON IPC; `embedded` renders
+//! with libmpv into a Wayland subsurface of the app's window. Both take the
+//! same [`Control`]s and report the same [`PlayerEvent`]s.
 
+mod control;
 mod mpv;
 mod tracks;
 mod types;

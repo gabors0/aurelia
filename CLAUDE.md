@@ -22,7 +22,7 @@ nix build                                             # release package: result/
 - `cargo test` does not rebuild the `target/debug/aurelia` binary; run `cargo build` before launching the app after test-only runs.
 - The `jellyfin` and `player` crates don't depend on GPUI. Test them in a separate target dir so they don't wait on the app build lock: `CARGO_TARGET_DIR=target/jf nix develop -c cargo test -p jellyfin`.
 - The first GPUI build takes ~12 minutes; the `gpui-kit` `test-support` dev-dependency builds a second copy of the GPUI stack for `cargo test -p aurelia`.
-- `cargo run -p player --example play -- <url> [header] [start-secs] [subtitle-url]` drives the mpv backend by hand.
+- `AURELIA_PLAY_HEADER=<header> cargo run -p player --example play -- <url> [start-secs] [subtitle-url]` drives the mpv backend by hand (the header comes from the environment, never the command line).
 
 ## Running and inspecting the UI
 

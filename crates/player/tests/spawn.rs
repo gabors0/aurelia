@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -98,4 +100,18 @@ fn stop_ends_with_quit() {
             break;
         }
     }
+}
+
+#[test]
+#[ignore = "needs a real mpv binary"]
+fn controls_reach_mpv_over_ipc() {
+    let player = MpvPlayer::find().expect("mpv on PATH").with_extra_args([
+        "--vo=null",
+        "--ao=null",
+        "--force-window=no",
+    ]);
+    let handle = player
+        .play(PlayRequest::new(common::test_media(), "Controls"))
+        .unwrap();
+    common::exercise_controls(&handle);
 }

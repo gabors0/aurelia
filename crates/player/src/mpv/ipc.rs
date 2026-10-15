@@ -1,11 +1,14 @@
 //! mpv JSON IPC: command encoding and translation of mpv's event stream into
 //! [`PlayerEvent`]s. Pure — no sockets — so it can be tested directly.
+//!
+//! The embedded backend converts libmpv's events into the same messages, so
+//! this translator serves both.
 
 use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::{EndReason, PlayerEvent};
+use crate::{EndReason, PlayerEvent, Track, TrackKind, Volume};
 
 /// One line of the IPC protocol.
 pub(crate) fn encode_command(request_id: u64, command: &[Value]) -> String {
@@ -14,9 +17,16 @@ pub(crate) fn encode_command(request_id: u64, command: &[Value]) -> String {
     line
 }
 
-/// Observed property ids.
-pub(crate) const OBSERVE_TIME_POS: u64 = 1;
-pub(crate) const OBSERVE_PAUSE: u64 = 2;
+/// Properties both backends observe, with their observer ids.
+pub(crate) const OBSERVED: [(u64, &str); 7] = [
+    (1, "time-pos"),
+    (2, "pause"),
+    (3, "duration"),
+    (4, "paused-for-cache"),
+    (5, "volume"),
+    (6, "mute"),
+    (7, "track-list"),
+];
 
 /// What the reader should do in response to a message, besides emitting events.
 #[derive(Debug, Default, PartialEq)]
@@ -34,6 +44,12 @@ pub(crate) struct EventTranslator {
     position: Duration,
     last_emitted: Option<Duration>,
     end_reason: Option<EndReason>,
+    duration: Option<Duration>,
+    buffering: bool,
+    volume: Option<f64>,
+    muted: Option<bool>,
+    last_volume: Option<Volume>,
+    tracks: Option<Vec<Track>>,
 }
 
 impl EventTranslator {
@@ -103,7 +119,58 @@ impl EventTranslator {
                 }
                 self.paused = paused;
             }
+            Some("duration") => {
+                let duration = data
+                    .and_then(Value::as_f64)
+                    .filter(|s| s.is_finite() && *s > 0.0)
+                    .map(Duration::from_secs_f64);
+                if let Some(duration) = duration
+                    && self.duration != Some(duration)
+                {
+                    self.duration = Some(duration);
+                    events.push(PlayerEvent::Duration(duration));
+                }
+            }
+            Some("paused-for-cache") => {
+                let buffering = data.and_then(Value::as_bool).unwrap_or(false);
+                if buffering != self.buffering {
+                    self.buffering = buffering;
+                    events.push(PlayerEvent::Buffering(buffering));
+                }
+            }
+            Some("volume") => {
+                if let Some(level) = data.and_then(Value::as_f64) {
+                    self.volume = Some(level);
+                    self.emit_volume(events);
+                }
+            }
+            Some("mute") => {
+                if let Some(muted) = data.and_then(Value::as_bool) {
+                    self.muted = Some(muted);
+                    self.emit_volume(events);
+                }
+            }
+            Some("track-list") => {
+                let tracks = data.map(parse_tracks).unwrap_or_default();
+                if self.tracks.as_ref() != Some(&tracks) {
+                    self.tracks = Some(tracks.clone());
+                    events.push(PlayerEvent::Tracks(tracks));
+                }
+            }
             _ => {}
+        }
+    }
+
+    /// Volume and mute arrive separately; report them together, on change.
+    fn emit_volume(&mut self, events: &mut Vec<PlayerEvent>) {
+        let defaults = Volume::default();
+        let volume = Volume {
+            level: self.volume.unwrap_or(defaults.level),
+            muted: self.muted.unwrap_or(defaults.muted),
+        };
+        if self.last_volume != Some(volume) {
+            self.last_volume = Some(volume);
+            events.push(PlayerEvent::Volume(volume));
         }
     }
 
@@ -121,6 +188,46 @@ impl EventTranslator {
             reason,
         }
     }
+}
+
+/// mpv's `track-list` property.
+pub(crate) fn parse_tracks(list: &Value) -> Vec<Track> {
+    let Some(entries) = list.as_array() else {
+        return Vec::new();
+    };
+    let text = |entry: &Value, key: &str| {
+        entry
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    };
+    let flag = |entry: &Value, key: &str| entry.get(key).and_then(Value::as_bool).unwrap_or(false);
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let id = entry.get("id")?.as_u64()?;
+            let kind = match entry.get("type").and_then(Value::as_str) {
+                Some("video") => Some(TrackKind::Video),
+                Some("audio") => Some(TrackKind::Audio),
+                Some("sub") => Some(TrackKind::Subtitle),
+                _ => None,
+            };
+            Some(Track {
+                id: u32::try_from(id).ok()?,
+                kind,
+                title: text(entry, "title"),
+                lang: text(entry, "lang"),
+                codec: text(entry, "codec"),
+                default: flag(entry, "default"),
+                forced: flag(entry, "forced"),
+                external: flag(entry, "external"),
+                external_filename: text(entry, "external-filename"),
+                ff_index: entry.get("ff-index").and_then(Value::as_i64),
+                selected: flag(entry, "selected"),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -349,5 +456,107 @@ mod tests {
             &[json!({"event": "property-change", "id": 1, "name": "time-pos", "data": null})],
         );
         assert!(events.is_empty());
+    }
+
+    fn prop(name: &str, data: Value) -> Value {
+        json!({"event": "property-change", "name": name, "data": data})
+    }
+
+    #[test]
+    fn duration_is_reported_on_change() {
+        let mut t = EventTranslator::default();
+        let events = feed(
+            &mut t,
+            &[
+                prop("duration", json!(null)),
+                prop("duration", json!(90.5)),
+                prop("duration", json!(90.5)),
+            ],
+        );
+        assert_eq!(
+            events,
+            vec![PlayerEvent::Duration(Duration::from_secs_f64(90.5))]
+        );
+    }
+
+    #[test]
+    fn buffering_follows_paused_for_cache() {
+        let mut t = EventTranslator::default();
+        let events = feed(
+            &mut t,
+            &[
+                prop("paused-for-cache", json!(false)),
+                prop("paused-for-cache", json!(true)),
+                prop("paused-for-cache", json!(true)),
+                prop("paused-for-cache", json!(false)),
+            ],
+        );
+        assert_eq!(
+            events,
+            vec![PlayerEvent::Buffering(true), PlayerEvent::Buffering(false)]
+        );
+    }
+
+    #[test]
+    fn volume_and_mute_are_reported_together() {
+        let mut t = EventTranslator::default();
+        let events = feed(
+            &mut t,
+            &[
+                prop("volume", json!(100.0)),
+                prop("mute", json!(false)),
+                prop("volume", json!(60.0)),
+                prop("mute", json!(true)),
+            ],
+        );
+        assert_eq!(
+            events,
+            vec![
+                PlayerEvent::Volume(Volume {
+                    level: 100.0,
+                    muted: false
+                }),
+                PlayerEvent::Volume(Volume {
+                    level: 60.0,
+                    muted: false
+                }),
+                PlayerEvent::Volume(Volume {
+                    level: 60.0,
+                    muted: true
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn track_list_is_parsed_and_reported_on_change() {
+        let list = json!([
+            {"id": 1, "type": "video", "codec": "h264", "ff-index": 0, "selected": true},
+            {"id": 1, "type": "audio", "lang": "eng", "title": "Stereo", "codec": "aac",
+             "default": true, "ff-index": 1, "selected": true},
+            {"id": 1, "type": "sub", "lang": "", "codec": "subrip", "external": true,
+             "external-filename": "https://jf/sub.srt", "selected": false},
+            {"type": "audio"}
+        ]);
+        let mut t = EventTranslator::default();
+        let events = feed(
+            &mut t,
+            &[prop("track-list", list.clone()), prop("track-list", list)],
+        );
+        let [PlayerEvent::Tracks(tracks)] = events.as_slice() else {
+            panic!("expected one Tracks event, got {events:?}");
+        };
+        assert_eq!(tracks.len(), 3, "entries without an id are skipped");
+        assert_eq!(tracks[1].kind, Some(TrackKind::Audio));
+        assert_eq!(tracks[1].title.as_deref(), Some("Stereo"));
+        assert_eq!(tracks[1].ff_index, Some(1));
+        assert!(tracks[1].default && tracks[1].selected);
+        assert_eq!(tracks[2].kind, Some(TrackKind::Subtitle));
+        assert_eq!(tracks[2].lang, None, "empty strings are absent");
+        assert_eq!(
+            tracks[2].external_filename.as_deref(),
+            Some("https://jf/sub.srt")
+        );
+        assert!(tracks[2].external && !tracks[2].selected);
     }
 }

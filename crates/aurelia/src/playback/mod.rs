@@ -182,6 +182,7 @@ pub fn play(
                 audio: tracks.audio,
                 subtitle: tracks.subtitle,
                 external_subtitles: tracks.external.clone(),
+                volume: None,
             };
             tracing::info!("playing {:?} from {:?}", request.title, request.start);
             let handle = match player.play(request) {
