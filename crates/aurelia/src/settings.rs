@@ -17,7 +17,17 @@ pub enum ThemeChoice {
     System,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Where video plays.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlayerChoice {
+    /// Inside Aurelia's window, with Aurelia's controls.
+    #[default]
+    Embedded,
+    /// A separate mpv window with mpv's own controls.
+    External,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeChoice,
@@ -27,6 +37,10 @@ pub struct Settings {
     pub profile_picker: bool,
     /// Home's slideshow moves on by itself.
     pub hero_autoplay: bool,
+    pub player: PlayerChoice,
+    /// The last playback's volume (0–100) and mute, used for the next.
+    pub volume: f64,
+    pub muted: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +50,9 @@ impl Default for Settings {
             animations: true,
             profile_picker: true,
             hero_autoplay: true,
+            player: PlayerChoice::Embedded,
+            volume: 100.0,
+            muted: false,
         }
     }
 }
@@ -152,6 +169,21 @@ mod tests {
         let loaded = Settings::load(dir.path());
         assert_eq!(loaded.theme, ThemeChoice::Light);
         assert!(loaded.animations && loaded.profile_picker && loaded.hero_autoplay);
+        assert_eq!(loaded.player, PlayerChoice::Embedded);
+        assert_eq!((loaded.volume, loaded.muted), (100.0, false));
+    }
+
+    #[test]
+    fn player_and_volume_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            player: PlayerChoice::External,
+            volume: 42.0,
+            muted: true,
+            ..Settings::default()
+        };
+        settings.save(dir.path()).unwrap();
+        assert_eq!(Settings::load(dir.path()), settings);
     }
 
     #[test]

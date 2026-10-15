@@ -401,7 +401,7 @@ impl Render for AppRoot {
         };
         div()
             .size_full()
-            .bg(Palette::bg())
+            .when(!crate::theme::see_through(), |this| this.bg(Palette::bg()))
             .text_color(Palette::text())
             .font_family(crate::theme::FONT)
             .child(key_nav::frame_start())

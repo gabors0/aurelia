@@ -29,6 +29,31 @@ pub fn appearance() -> Appearance {
     }
 }
 
+/// Video plays under the window: the window's own background is clear.
+static SEE_THROUGH: AtomicBool = AtomicBool::new(false);
+
+pub fn see_through() -> bool {
+    SEE_THROUGH.load(Ordering::Relaxed)
+}
+
+/// Clears (or restores) the window background, so video drawn below the
+/// window shows. Only the player turns this on, once its video has a frame.
+pub fn set_see_through(on: bool, cx: &mut App) {
+    if SEE_THROUGH.swap(on, Ordering::Relaxed) == on {
+        return;
+    }
+    Theme::update(cx, |theme| theme.colors.background = window_background());
+    cx.refresh_windows();
+}
+
+fn window_background() -> Hsla {
+    if see_through() {
+        Hsla::transparent_black()
+    } else {
+        Palette::bg().into()
+    }
+}
+
 pub fn is_light() -> bool {
     appearance() == Appearance::Light
 }
@@ -200,7 +225,7 @@ pub fn apply(appearance: Appearance, cx: &mut App) {
         };
         let accent: Hsla = Palette::accent().into();
         let c = &mut theme.colors;
-        c.background = Palette::bg().into();
+        c.background = window_background();
         c.foreground = Palette::text().into();
         c.muted = Palette::surface().into();
         c.muted_foreground = Palette::text_secondary().into();

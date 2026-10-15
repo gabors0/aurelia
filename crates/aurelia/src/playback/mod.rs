@@ -6,16 +6,23 @@ mod tracks;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{App, Global, Window};
+use gpui_kit::{App, AppContext as _, Entity, Global, SharedString, Window};
 use jellyfin::{BaseItem, Client, ItemKind, PlaybackReport, Ticks};
-use player::{EndReason, PlayRequest, PlaybackControl, PlayerEvent};
+use player::{
+    EndReason, PlayRequest, PlaybackControl, PlaybackHandle, PlayerEvent, VideoSurface, Volume,
+};
 
 use self::reporter::{ReportKind, Reporter};
-pub use self::tracks::{TrackSelection, label as track_label};
+pub use self::tracks::{KnownTrack, TrackSelection, label as track_label, menu_label};
 use crate::format;
 use crate::runtime;
+use crate::settings::{self, PlayerChoice};
 use crate::state::AppState;
+use crate::views::player::{PlayerInfo, PlayerView};
 use crate::views::shell;
+
+const NO_MPV: &str =
+    "Aurelia plays video with mpv, but mpv wasn't found. Install mpv or set AURELIA_MPV.";
 
 /// The session currently playing; starting another stops it.
 #[derive(Default)]
@@ -115,6 +122,79 @@ fn media_title(item: &BaseItem) -> String {
     }
 }
 
+/// The player's heading: the movie or show, then the episode or year.
+fn player_heading(item: &BaseItem) -> (SharedString, Option<SharedString>) {
+    match (item.kind, &item.series_name) {
+        (ItemKind::Episode, Some(series)) => {
+            let label = format::episode_label(item.parent_index_number, item.index_number);
+            let detail = if label.is_empty() {
+                item.name.clone()
+            } else {
+                format!("{label} · {}", item.name)
+            };
+            (series.clone().into(), Some(detail.into()))
+        }
+        _ => (
+            item.name.clone().into(),
+            item.production_year.map(|year| year.to_string().into()),
+        ),
+    }
+}
+
+/// Starts `request` inside the window when the settings ask for it and it
+/// works, else in mpv's own window. `None` when nothing could start (the
+/// user has been told why).
+fn start_playback(
+    request: PlayRequest,
+    info: PlayerInfo,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<(PlaybackHandle, Option<Entity<PlayerView>>)> {
+    if settings::get(cx).player == PlayerChoice::Embedded {
+        match start_embedded(request.clone(), window, cx) {
+            Ok((handle, surface)) => {
+                let control = handle.control();
+                let view = cx.new(|cx| PlayerView::new(info, control, Some(surface), cx));
+                shell::open_player(view.clone(), window, cx);
+                return Some((handle, Some(view)));
+            }
+            Err(reason) => {
+                if AppState::embedding_failed(cx, reason.clone()) {
+                    shell::notify(
+                        format!("Playing in a separate mpv window: {reason}."),
+                        window,
+                        cx,
+                    );
+                }
+            }
+        }
+    }
+    let Some(external) = AppState::global(cx).player() else {
+        shell::report_message(NO_MPV, window, cx);
+        return None;
+    };
+    match external.play(request) {
+        Ok(handle) => Some((handle, None)),
+        Err(err) => {
+            shell::report_message(err.to_string(), window, cx);
+            None
+        }
+    }
+}
+
+fn start_embedded(
+    request: PlayRequest,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<(PlaybackHandle, Arc<VideoSurface>), String> {
+    let player = AppState::embedded(cx)?;
+    let surface = VideoSurface::attach(&*window).map_err(|err| err.to_string())?;
+    let handle = player
+        .play(request, surface.clone())
+        .map_err(|err| err.to_string())?;
+    Ok((handle, surface))
+}
+
 /// Plays one movie or episode with the given tracks.
 pub fn play(
     item_id: String,
@@ -123,14 +203,11 @@ pub fn play(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let Some(player) = AppState::global(cx).player() else {
-        shell::report_message(
-            "Aurelia plays video with mpv, but mpv wasn't found. Install mpv or set AURELIA_MPV.",
-            window,
-            cx,
-        );
+    let external = settings::get(cx).player == PlayerChoice::External;
+    if external && AppState::global(cx).player().is_none() {
+        shell::report_message(NO_MPV, window, cx);
         return;
-    };
+    }
     let client = AppState::client(cx);
     let fetch_client = client.clone();
     let prepare = runtime::api(cx, async move {
@@ -162,11 +239,22 @@ pub fn play(
                 return;
             };
 
-            let tracks = tracks::resolve(&source, selection, |stream| {
+            let subtitle_url = |stream: &jellyfin::MediaStream| {
                 client
                     .subtitle_url(&item.id, &source.id, stream.index, stream.codec.as_deref())
                     .to_string()
-            });
+            };
+            let tracks = tracks::resolve(&source, selection, subtitle_url);
+            let known = tracks::known_tracks(&source, subtitle_url);
+            let Ok(saved) = cx.update(|_, cx| {
+                let settings = settings::get(cx);
+                Volume {
+                    level: settings.volume,
+                    muted: settings.muted,
+                }
+            }) else {
+                return;
+            };
             let start = if from_start {
                 Duration::ZERO
             } else {
@@ -182,16 +270,21 @@ pub fn play(
                 audio: tracks.audio,
                 subtitle: tracks.subtitle,
                 external_subtitles: tracks.external.clone(),
-                volume: None,
+                volume: Some(saved),
             };
             tracing::info!("playing {:?} from {:?}", request.title, request.start);
-            let handle = match player.play(request) {
-                Ok(handle) => handle,
-                Err(err) => {
-                    cx.update(|window, cx| shell::report_message(err.to_string(), window, cx))
-                        .ok();
-                    return;
-                }
+            let (title, detail) = player_heading(&item);
+            let player_info = PlayerInfo {
+                title,
+                detail,
+                runtime: item.runtime(),
+                known_tracks: known.clone(),
+                volume: saved,
+            };
+            let Ok(Some((handle, view))) =
+                cx.update(|window, cx| start_playback(request, player_info, window, cx))
+            else {
+                return;
             };
             let control = handle.control();
             cx.update(|_, cx| {
@@ -207,9 +300,23 @@ pub fn play(
             base.audio_stream_index = tracks.audio_index;
             base.subtitle_stream_index = Some(tracks.subtitle_index);
 
+            let mut volume = saved;
             let events = handle.events().clone();
             while let Ok(event) = events.recv().await {
                 let ended = matches!(event, PlayerEvent::Ended { .. });
+                if let Some(view) = &view {
+                    cx.update(|_, cx| view.update(cx, |view, cx| view.on_event(&event, cx)))
+                        .ok();
+                }
+                match &event {
+                    PlayerEvent::Tracks(list) => {
+                        let (audio, subtitle) = tracks::reported_indices(list, &known);
+                        base.audio_stream_index = audio.or(base.audio_stream_index);
+                        base.subtitle_stream_index = subtitle.or(base.subtitle_stream_index);
+                    }
+                    PlayerEvent::Volume(now) => volume = *now,
+                    _ => {}
+                }
                 if let PlayerEvent::Ended {
                     reason: EndReason::Error(message),
                     ..
@@ -258,6 +365,15 @@ pub fn play(
                 if now.0.as_ref().is_some_and(|c| Arc::ptr_eq(c, &control)) {
                     now.0 = None;
                 }
+                if volume != saved {
+                    settings::update(cx, |s| {
+                        s.volume = volume.level;
+                        s.muted = volume.muted;
+                    });
+                }
+                if let Some(view) = &view {
+                    view.update(cx, |view, cx| view.close(false, window, cx));
+                }
                 shell::refresh_all(window, cx);
             })
             .ok();
@@ -268,6 +384,24 @@ pub fn play(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn player_headings() {
+        let episode: BaseItem = serde_json::from_value(serde_json::json!({
+            "Id": "e", "Name": "Half Loop", "Type": "Episode", "SeriesName": "Severance",
+            "ParentIndexNumber": 1, "IndexNumber": 3
+        }))
+        .unwrap();
+        assert_eq!(
+            player_heading(&episode),
+            ("Severance".into(), Some("S1:E3 · Half Loop".into()))
+        );
+        let movie: BaseItem = serde_json::from_value(serde_json::json!({
+            "Id": "m", "Name": "Dune", "Type": "Movie", "ProductionYear": 2024
+        }))
+        .unwrap();
+        assert_eq!(player_heading(&movie), ("Dune".into(), Some("2024".into())));
+    }
 
     #[test]
     fn titles() {

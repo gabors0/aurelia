@@ -1,5 +1,5 @@
-//! Settings: theme, motion, the Home slideshow, accounts on this device, and
-//! the keyboard shortcuts.
+//! Settings: theme, motion, the Home slideshow, playback, accounts on this
+//! device, and the keyboard shortcuts.
 
 use gpui_kit::AnimationExt as _;
 use gpui_kit::assets::IconName;
@@ -16,7 +16,7 @@ use crate::components::motion::{SPRING, mix, pressable};
 use crate::components::pill::pill;
 use crate::components::row::ROW_PADDING;
 use crate::session::Session;
-use crate::settings::{self, Settings, ThemeChoice};
+use crate::settings::{self, PlayerChoice, Settings, ThemeChoice};
 use crate::state::AppState;
 use crate::theme::{FONT_DISPLAY, Palette};
 use crate::views::shell::{self, NAV_HEIGHT};
@@ -27,7 +27,7 @@ const THEMES: [(ThemeChoice, &str); 3] = [
     (ThemeChoice::System, "Match system"),
 ];
 
-const SHORTCUTS: [(&str, &str); 10] = [
+const SHORTCUTS: &[(&str, &str)] = &[
     ("↑ ↓ ← →", "Move between posters, buttons and shelves"),
     (
         "Enter / Space",
@@ -44,6 +44,15 @@ const SHORTCUTS: [(&str, &str); 10] = [
     ("Ctrl+R, F5", "Refresh"),
     ("Ctrl+,", "Settings"),
     ("Ctrl+Q", "Quit"),
+];
+
+const PLAYER_SHORTCUTS: &[(&str, &str)] = &[
+    ("Space, K", "Play or pause"),
+    ("← / →", "Back or forward 10 seconds"),
+    ("↑ / ↓", "Volume up or down"),
+    ("M", "Mute"),
+    ("F, double-click", "Full screen"),
+    ("Esc", "Leave full screen, then the player"),
 ];
 
 pub struct SettingsPage {
@@ -295,6 +304,25 @@ fn labelled(label: &'static str, control: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
+fn shortcut_rows(shortcuts: &'static [(&'static str, &'static str)]) -> Vec<AnyElement> {
+    shortcuts
+        .iter()
+        .map(|(keys, action)| {
+            h_flex()
+                .gap_4()
+                .py_1()
+                .child(keycap(keys))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(Palette::text_secondary())
+                        .child(*action),
+                )
+                .into_any_element()
+        })
+        .collect()
+}
+
 fn keycap(keys: &'static str) -> AnyElement {
     div()
         .w(px(150.))
@@ -320,6 +348,7 @@ impl Render for SettingsPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let current = settings::get(cx).clone();
         let session = AppState::global(cx).session().cloned();
+        let embed_failure = AppState::global(cx).embed_failure().map(String::from);
         let signed_in = session
             .map(|s| format!("Signed in as {} on {}", s.user_name, s.server_name))
             .unwrap_or_default();
@@ -356,6 +385,34 @@ impl Render for SettingsPage {
                     toggle(|s| s.hero_autoplay = !s.hero_autoplay),
                 )],
             ),
+            section("Playback", {
+                let mut rows = vec![switch_row(
+                    "embedded-player",
+                    "Play inside Aurelia",
+                    "Video plays in this window with Aurelia's controls. Off: a separate mpv window with mpv's own controls.",
+                    current.player == PlayerChoice::Embedded,
+                    toggle(|s| {
+                        s.player = match s.player {
+                            PlayerChoice::Embedded => PlayerChoice::External,
+                            PlayerChoice::External => PlayerChoice::Embedded,
+                        }
+                    }),
+                )];
+                if let Some(reason) =
+                    embed_failure.filter(|_| current.player == PlayerChoice::Embedded)
+                {
+                    rows.push(
+                        div()
+                            .text_sm()
+                            .text_color(Palette::text_tertiary())
+                            .child(format!(
+                                "Playing in a separate window until Aurelia restarts: {reason}."
+                            ))
+                            .into_any_element(),
+                    );
+                }
+                rows
+            }),
             section(
                 "Accounts",
                 vec![
@@ -370,25 +427,8 @@ impl Render for SettingsPage {
                     self.render_accounts(cx),
                 ],
             ),
-            section(
-                "Keyboard",
-                SHORTCUTS
-                    .iter()
-                    .map(|(keys, action)| {
-                        h_flex()
-                            .gap_4()
-                            .py_1()
-                            .child(keycap(keys))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(Palette::text_secondary())
-                                    .child(*action),
-                            )
-                            .into_any_element()
-                    })
-                    .collect(),
-            ),
+            section("Keyboard", shortcut_rows(SHORTCUTS)),
+            section("Keyboard in the player", shortcut_rows(PLAYER_SHORTCUTS)),
         ];
 
         div()

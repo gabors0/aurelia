@@ -33,6 +33,7 @@ fn main() {
             components::key_nav::init(cx);
             images::ImageStore::init(cx);
             views::shell::bind_keys(cx);
+            views::player::bind_keys(cx);
             views::profiles::bind_keys(cx);
 
             let options = WindowOptions {

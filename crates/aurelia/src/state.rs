@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use gpui_kit::{App, Global};
 use jellyfin::{Client, DeviceInfo, UserView};
-use player::{MpvPlayer, Player};
+use player::{EmbedError, EmbeddedPlayer, MpvPlayer, Player};
 
 use crate::session::{Session, SessionStore};
 
@@ -18,6 +18,10 @@ pub struct AppState {
     client: Option<Client>,
     views: Vec<UserView>,
     player: Option<Arc<dyn Player>>,
+    /// libmpv, loaded on first use.
+    embedded: Option<Result<EmbeddedPlayer, EmbedError>>,
+    /// Why playing inside the window failed this run; it isn't tried again.
+    embed_failure: Option<String>,
 }
 
 impl Global for AppState {}
@@ -34,6 +38,8 @@ impl AppState {
             client: None,
             views: Vec::new(),
             player,
+            embedded: None,
+            embed_failure: None,
         });
     }
 
@@ -55,6 +61,32 @@ impl AppState {
 
     pub fn player(&self) -> Option<Arc<dyn Player>> {
         self.player.clone()
+    }
+
+    /// The embedded player, unless it has failed this run (then the reason).
+    pub fn embedded(cx: &mut App) -> Result<EmbeddedPlayer, String> {
+        let state = cx.global_mut::<AppState>();
+        if let Some(reason) = &state.embed_failure {
+            return Err(reason.clone());
+        }
+        match state.embedded.get_or_insert_with(EmbeddedPlayer::load) {
+            Ok(player) => Ok(player.clone()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    /// Playing inside the window failed: say so once, use mpv's window from
+    /// now on. Returns whether this is the first failure this run.
+    pub fn embedding_failed(cx: &mut App, reason: String) -> bool {
+        let state = cx.global_mut::<AppState>();
+        tracing::warn!("playing in a separate mpv window: {reason}");
+        let first = state.embed_failure.is_none();
+        state.embed_failure.get_or_insert(reason);
+        first
+    }
+
+    pub fn embed_failure(&self) -> Option<&str> {
+        self.embed_failure.as_deref()
     }
 
     /// The signed-in client. Views only exist while signed in.

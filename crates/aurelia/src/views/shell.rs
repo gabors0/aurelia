@@ -11,9 +11,9 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{Sizable as _, TitleBar, WindowExt as _, h_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    Animation, AnimationExt as _, App, Context, ElementId, EntityId, EventEmitter, FocusHandle,
-    Focusable, FontWeight, Global, KeyBinding, MouseButton, NavigationDirection, Pixels,
-    SharedString, SpringAnimation, WeakEntity, Window, actions, div, linear_color_stop,
+    Animation, AnimationExt as _, App, Context, ElementId, Entity, EntityId, EventEmitter,
+    FocusHandle, Focusable, FontWeight, Global, KeyBinding, MouseButton, NavigationDirection,
+    Pixels, SharedString, SpringAnimation, WeakEntity, Window, actions, div, linear_color_stop,
     linear_gradient, px,
 };
 
@@ -28,6 +28,7 @@ use crate::nav::{Nav, Route};
 use crate::state::AppState;
 use crate::theme::Palette;
 use crate::views::pages::Page;
+use crate::views::player::{PlayerView, PlayerViewEvent};
 use gpui_kit::assets::IconName as icon;
 
 pub const NAV_HEIGHT: Pixels = px(64.);
@@ -107,6 +108,11 @@ pub fn switch_user(cx: &mut App) {
 /// Opens sign-in for another account, keeping this one open behind it.
 pub fn add_account(cx: &mut App) {
     with_shell(cx, |_, cx| cx.emit(ShellEvent::AddAccount));
+}
+
+/// Shows the player over everything until it closes.
+pub fn open_player(view: Entity<PlayerView>, window: &mut Window, cx: &mut App) {
+    with_shell(cx, |shell, cx| shell.open_player(view, window, cx));
 }
 
 /// Every page in the history, oldest first.
@@ -218,6 +224,8 @@ pub struct Shell {
     transition: Transition,
     /// The nav target that had keyboard focus on each page left behind.
     focused_on: HashMap<EntityId, ElementId>,
+    /// Shown instead of the nav and the page while something plays.
+    player: Option<(Entity<PlayerView>, gpui_kit::Subscription)>,
     _activation: gpui_kit::Subscription,
 }
 
@@ -252,6 +260,7 @@ impl Shell {
                 opened: true,
             },
             focused_on: HashMap::new(),
+            player: None,
             _activation: activation,
         };
         if let Some(route) = dev_start_route() {
@@ -271,6 +280,48 @@ impl Shell {
         let page = Page::for_route(&route, window, cx);
         self.nav.push(route, page);
         self.arrive(true, None, window, cx);
+    }
+
+    fn open_player(
+        &mut self,
+        view: Entity<PlayerView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some((previous, _)) = self.player.take() {
+            previous.update(cx, |player, cx| player.close(true, window, cx));
+        } else {
+            self.remember_focus(window, cx);
+        }
+        let subscription = cx.subscribe_in(
+            &view,
+            window,
+            |this, view, PlayerViewEvent::Closed, window, cx| {
+                if this.player.as_ref().is_some_and(|(open, _)| open == view) {
+                    this.close_player(window, cx);
+                }
+            },
+        );
+        window.focus(&view.focus_handle(cx), cx);
+        self.player = Some((view, subscription));
+        cx.notify();
+    }
+
+    /// Back to the page underneath, as it was.
+    fn close_player(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.player = None;
+        crate::theme::set_see_through(false, cx);
+        let restore = self
+            .focused_on
+            .get(&self.nav.page().view().entity_id())
+            .cloned();
+        self.focus_page(window, cx);
+        key_nav::restore(restore, cx);
+        cx.notify();
+    }
+
+    fn playing(&self) -> bool {
+        self.player.is_some()
     }
 
     /// Notes which target had focus on the page being left.
@@ -315,6 +366,10 @@ impl Shell {
     }
 
     fn back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((player, _)) = &self.player {
+            player.update(cx, |player, cx| player.close(true, window, cx));
+            return;
+        }
         self.remember_focus(window, cx);
         if self.nav.back() {
             let restore = self
@@ -330,6 +385,9 @@ impl Shell {
     }
 
     fn forward(&mut self, _: &Forward, window: &mut Window, cx: &mut Context<Self>) {
+        if self.playing() {
+            return;
+        }
         self.remember_focus(window, cx);
         if self.nav.forward() {
             let restore = self
@@ -341,6 +399,9 @@ impl Shell {
     }
 
     fn search(&mut self, _: &Search, window: &mut Window, cx: &mut Context<Self>) {
+        if self.playing() {
+            return;
+        }
         if self.nav.route() == &Route::Search {
             self.focus_page(window, cx);
         } else {
@@ -349,11 +410,16 @@ impl Shell {
     }
 
     fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Route::Settings, window, cx);
+        if !self.playing() {
+            self.navigate(Route::Settings, window, cx);
+        }
     }
 
     /// Arrow keys. With nothing focused, ←/→ on Home still change slides.
     fn step(&mut self, direction: Direction, window: &mut Window, cx: &mut Context<Self>) {
+        if self.playing() {
+            return;
+        }
         let horizontal = matches!(direction, Direction::Left | Direction::Right);
         if horizontal && !key_nav::has_focus(window, cx) && matches!(self.nav.page(), Page::Home(_))
         {
@@ -365,11 +431,15 @@ impl Shell {
     }
 
     fn play_current(&mut self, _: &PlayCurrent, window: &mut Window, cx: &mut Context<Self>) {
-        self.nav.page().clone().primary_action(window, cx);
+        if !self.playing() {
+            self.nav.page().clone().primary_action(window, cx);
+        }
     }
 
     fn refresh(&mut self, _: &Refresh, window: &mut Window, cx: &mut Context<Self>) {
-        self.reload(true, window, cx);
+        if !self.playing() {
+            self.reload(true, window, cx);
+        }
     }
 
     /// `reshuffle`: asked for by the user, so Home also re-rolls its hero.
@@ -680,6 +750,21 @@ fn account_button(user: String, server: String, avatar: Option<ImageRequest>) ->
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some((player, _)) = &self.player {
+            // The page stays alive underneath, undrawn.
+            return div()
+                .id("shell")
+                .relative()
+                .size_full()
+                .key_context(CONTEXT)
+                .on_action(cx.listener(Self::back))
+                .on_mouse_down(
+                    MouseButton::Navigate(NavigationDirection::Back),
+                    cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
+                )
+                .child(player.clone())
+                .into_any_element();
+        }
         let scope = key_nav::scope(
             self.focus.clone(),
             self.nav.page().scroll_handle(cx),
@@ -738,6 +823,7 @@ impl Render for Shell {
             .child(scope)
             .child(page)
             .child(self.render_nav(window, cx))
+            .into_any_element()
     }
 }
 

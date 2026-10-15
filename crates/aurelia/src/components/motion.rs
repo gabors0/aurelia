@@ -142,6 +142,19 @@ impl InteractiveElement for Pressable {
 
 impl StatefulInteractiveElement for Pressable {}
 
+/// Lets a pressable open a dropdown menu; it has no selected look.
+impl gpui_kit::base::Selectable for Pressable {
+    fn selected(self, _: bool) -> Self {
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        false
+    }
+}
+
+impl gpui_kit::component::menu::DropdownMenu for Pressable {}
+
 impl Styled for Pressable {
     fn style(&mut self) -> &mut StyleRefinement {
         self.base.style()
