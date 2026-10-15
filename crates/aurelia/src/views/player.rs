@@ -138,6 +138,15 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Self {
         let volume = info.volume;
+        // Gone without being closed (signed out, session expired): stop, and
+        // give the window its background back.
+        cx.on_release(|this: &mut Self, cx| {
+            if !this.closed {
+                this.control.stop();
+            }
+            crate::theme::set_see_through(false, cx);
+        })
+        .detach();
         let mut this = Self {
             info,
             control,
@@ -1037,6 +1046,17 @@ mod tests {
         .unwrap();
         let sent = control.take();
         assert_eq!(sent, vec![Control::Seek(Duration::from_secs(50))]);
+    }
+
+    #[gpui_kit::test]
+    fn dropping_the_view_stops_playback(cx: &mut TestAppContext) {
+        let (window, view, control) = open(cx);
+        drop(view);
+        cx.update(|cx| window.update(cx, |_, window, _| window.remove_window()))
+            .unwrap();
+        cx.run_until_parked();
+        assert!(control.stopped.load(Ordering::SeqCst));
+        assert!(!crate::theme::see_through());
     }
 
     #[gpui_kit::test]
