@@ -182,7 +182,8 @@ fn start_playback(
     }
 }
 
-fn start_embedded(
+/// Starts `request` inside `window`.
+pub(crate) fn start_embedded(
     request: PlayRequest,
     window: &mut Window,
     cx: &mut App,

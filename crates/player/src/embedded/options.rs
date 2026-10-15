@@ -12,6 +12,11 @@ pub(crate) const DEFAULTS: &[(&str, &str)] = &[
     // `auto-safe` alone tries Vulkan decoding first and, where that fails,
     // falls back to software instead of trying VA-API.
     ("hwdec", "vaapi,auto-safe"),
+    // Direct rendering (the decoder writing straight into GL-mapped
+    // buffers) gave black video in 9 of 24 runs under Mesa's llvmpipe, 1 of
+    // 20 without it; untested on hardware drivers. Without it, software-
+    // decoded frames take one more copy; hardware-decoded ones never use it.
+    ("vd-lavc-dr", "no"),
 ];
 
 /// Set before `mpv_initialize` and again after it.

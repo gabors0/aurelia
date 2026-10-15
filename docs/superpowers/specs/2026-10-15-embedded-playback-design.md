@@ -77,6 +77,14 @@ Findings to act on:
   (`VK_KHR_video_decode_queue` missing), failed and fell back to *software*
   decoding instead of trying VA-API. Use an explicit order (e.g.
   `hwdec=vaapi,auto-safe`) unless the user's `mpv.conf` sets `hwdec`.
+- Checked in software-rendered headless sway (2026-10-15, pixman +
+  lavapipe/llvmpipe): video under the controls, fullscreen at full
+  brightness, floating windows dimmed by exactly the shadow's amount
+  (0.765 when inactive). Under llvmpipe, mpv's direct rendering
+  (`vd-lavc-dr`) gave black video in 9 of 24 runs (1 of 20 without, cause
+  not found; mpv's own debug logs were identical in good and bad runs), so
+  `vd-lavc-dr=no` is a default that mpv.conf can override. Worth checking on
+  real hardware.
 - Untested: **KWin** (the user's desktop), X11 sessions, multi-monitor
   scale changes, HDR. KWin must be checked by the user. Don't run test windows
   on their desktop (see CLAUDE.md).

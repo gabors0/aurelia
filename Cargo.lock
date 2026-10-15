@@ -5044,9 +5044,16 @@ name = "player"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "khronos-egl",
+ "libloading",
+ "raw-window-handle",
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-egl",
+ "wayland-protocols",
 ]
 
 [[package]]
@@ -5186,20 +5193,6 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "probe-embed"
-version = "0.1.0"
-dependencies = [
- "gpui-kit",
- "khronos-egl",
- "libloading",
- "raw-window-handle",
- "wayland-backend",
- "wayland-client",
- "wayland-egl",
- "wayland-protocols",
 ]
 
 [[package]]

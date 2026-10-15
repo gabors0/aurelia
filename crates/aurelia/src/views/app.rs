@@ -31,6 +31,8 @@ enum Screen {
     Login(Entity<LoginView>),
     Main(Entity<Shell>),
     Offline(SharedString),
+    /// `AURELIA_PLAY_FILE`: the player alone (development).
+    Player(Entity<crate::views::player::PlayerView>),
 }
 
 pub struct AppRoot {
@@ -58,6 +60,12 @@ impl AppRoot {
             _appearance: appearance,
             _task: None,
         };
+        if let Some(player) = crate::dev::play_file(window, cx) {
+            window.focus(&player.focus_handle(cx), cx);
+            this._subscription = Some(cx.subscribe(&player, |_, _, _, cx| cx.quit()));
+            this.screen = Screen::Player(player);
+            return this;
+        }
         let store = AppState::global(cx).store();
         let accounts = store.accounts();
         let active = store.load();
@@ -394,6 +402,7 @@ impl Render for AppRoot {
             Screen::Profiles(profiles) => profiles.clone().into_any_element(),
             Screen::Login(login) => login.clone().into_any_element(),
             Screen::Main(shell) => shell.clone().into_any_element(),
+            Screen::Player(player) => player.clone().into_any_element(),
             Screen::Offline(message) => {
                 let message = message.clone();
                 self.render_offline(message, cx).into_any_element()

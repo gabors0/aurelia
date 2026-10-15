@@ -57,3 +57,50 @@ pub fn type_keys(window: &mut gpui_kit::Window, cx: &mut gpui_kit::App) {
         })
         .detach();
 }
+
+/// `AURELIA_PLAY_FILE=<path or URL>`: opens straight into the embedded
+/// player with that media, no server needed, and quits when it closes. For
+/// checking the player on screen.
+pub fn play_file(
+    window: &mut gpui_kit::Window,
+    cx: &mut gpui_kit::App,
+) -> Option<gpui_kit::Entity<crate::views::player::PlayerView>> {
+    use gpui_kit::AppContext as _;
+
+    use crate::views::player::{PlayerInfo, PlayerView};
+
+    let url = std::env::var("AURELIA_PLAY_FILE").ok()?;
+    let request = player::PlayRequest::new(url.clone(), "Aurelia player check");
+    let (handle, surface) = match crate::playback::start_embedded(request, window, cx) {
+        Ok(started) => started,
+        Err(reason) => {
+            tracing::error!("AURELIA_PLAY_FILE: can't play inside the window: {reason}");
+            return None;
+        }
+    };
+    let info = PlayerInfo {
+        title: "Player check".into(),
+        detail: Some(url.into()),
+        ..PlayerInfo::default()
+    };
+    let control = handle.control();
+    let view = cx.new(|cx| PlayerView::new(info, control, Some(surface), cx));
+    let events = handle.events().clone();
+    let forward = view.downgrade();
+    window
+        .spawn(cx, async move |cx| {
+            while let Ok(event) = events.recv().await {
+                tracing::info!("player event: {event:?}");
+                let ended = matches!(event, player::PlayerEvent::Ended { .. });
+                cx.update(|_, cx| forward.update(cx, |view, cx| view.on_event(&event, cx)))
+                    .ok();
+                if ended {
+                    break;
+                }
+            }
+            cx.update(|_, cx| cx.quit()).ok();
+            drop(handle);
+        })
+        .detach();
+    Some(view)
+}

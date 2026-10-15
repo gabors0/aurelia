@@ -255,6 +255,13 @@ impl VideoSurface {
             }
             *placed = Some(placement);
         }
+        tracing::debug!(
+            "video at {},{} {width}×{height} ({}×{} pixels)",
+            placement.x,
+            placement.y,
+            placement.physical.0,
+            placement.physical.1
+        );
         self.subsurface.set_position(placement.x, placement.y);
         // The buffer is physical-sized; the viewport maps it onto logical
         // pixels, so fractional scales stay sharp.
@@ -434,7 +441,9 @@ fn render_thread(
         if let Some(context) = &context {
             context.report_swap();
         }
-        shared.ready.store(true, Ordering::Release);
+        if !shared.ready.swap(true, Ordering::Release) {
+            tracing::debug!("first video frame presented");
+        }
     }
     // Free mpv's GL objects while the context is still current.
     drop(context);

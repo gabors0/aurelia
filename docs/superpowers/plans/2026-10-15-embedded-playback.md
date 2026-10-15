@@ -1,6 +1,12 @@
 # Aurelia v2: embedded playback — implementation plan
 
-> Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [x]`) syntax for tracking.
+
+**Status (2026-10-15):** Tasks 1–7 implemented on `v2`. Verified here:
+unit, UI and live tests (real mpv, libmpv, and `tests/surface.rs` in a
+software-rendered headless sway), plus screenshots of the player via
+`AURELIA_PLAY_FILE`. Left for the user: a real GPU, a Jellyfin stream (the
+demo server wasn't reachable from the build machine) and KWin.
 
 **Goal:** Video plays inside Aurelia's window under Aurelia's own controls
 (libmpv render API → EGL → a `wl_subsurface` below GPUI's transparent
@@ -65,16 +71,16 @@ remembered fallback, and remembered volume.
 - Observed properties (shared ids): time-pos, pause, duration,
   paused-for-cache, volume, mute, track-list (`ipc::OBSERVED`).
 
-- [ ] `control::command` maps each control (`set pause yes`, `seek <s>
+- [x] `control::command` maps each control (`set pause yes`, `seek <s>
   absolute`, `seek <s> relative+exact`, `set volume <v>`, `set mute`,
   `set aid|sid auto|no|<id>`); tests per variant.
-- [ ] Translator: duration (on change), buffering (`paused-for-cache`),
+- [x] Translator: duration (on change), buffering (`paused-for-cache`),
   volume/mute (combined `Volume` on change), track-list parsing (`Tracks`
   on change); existing tests unchanged; new tests for each.
-- [ ] `MpvPlayer`: observe all properties, `send` writes the command over
+- [x] `MpvPlayer`: observe all properties, `send` writes the command over
   IPC, `--volume`/`--mute` from the request.
-- [ ] `play` example reads its header from `$AURELIA_PLAY_HEADER`.
-- [ ] `cargo test -p player`, clippy; commit.
+- [x] `play` example reads its header from `$AURELIA_PLAY_HEADER`.
+- [x] `cargo test -p player`, clippy; commit.
 
 ### Task 2: libmpv FFI and the event bridge (`player::embedded`)
 
@@ -92,11 +98,11 @@ remembered fallback, and remembered volume.
   `playback-restart`, `seek`, `start-file`, `idle`, `shutdown`).
 - `options::{BEFORE_INIT, AFTER_INIT}` lists (spec's precedence rules).
 
-- [ ] Node → JSON conversion is unit-tested on hand-built `mpv_node`s.
-- [ ] End-file reason mapping tested.
-- [ ] Options lists tested (required options appear after init; `hwdec`
+- [x] Node → JSON conversion is unit-tested on hand-built `mpv_node`s.
+- [x] End-file reason mapping tested.
+- [x] Options lists tested (required options appear after init; `hwdec`
   only before; `load-auto-profiles` absent).
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 3: `EmbeddedPlayer` session
 
@@ -114,11 +120,11 @@ remembered fallback, and remembered volume.
 - `EmbeddedControl` (`send` → async command; `stop` → `stop`); holds the
   core only while the session lives.
 
-- [ ] `#[ignore]` (needs libmpv) headless test: `av://lavfi:testsrc` plays
+- [x] `#[ignore]` (needs libmpv) headless test: `av://lavfi:testsrc` plays
   through `Started`, `Duration`, `Tracks`, `Ended { Eof }`; a second test
   stops early → `Ended { Quit }` exactly once; a bad URL → `Ended { Error }`.
   Run them here inside the dev shell.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 4: `VideoSurface` (`player::embedded::surface`)
 
@@ -140,57 +146,57 @@ remembered fallback, and remembered volume.
 - `Drop`: stop the thread (frees the context, EGL), then destroy viewport,
   subsurface, surface; flush.
 
-- [ ] Builds; a `#[ignore]` test (needs `WAYLAND_DISPLAY`) makes an xdg
+- [x] Builds; a `#[ignore]` test (needs `WAYLAND_DISPLAY`) makes an xdg
   toplevel, attaches, plays testsrc, waits for `Started` and `is_ready`.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 5: Settings, state and backend choice (app)
 
 **Files:** `crates/aurelia/src/settings.rs`, `state.rs`, `playback/mod.rs`,
 `playback/tracks.rs`, `views/pages/settings.rs`.
 
-- [ ] `Settings { player: PlayerChoice (Embedded default), volume: f64,
+- [x] `Settings { player: PlayerChoice (Embedded default), volume: f64,
   muted: bool }`; round-trip test incl. old files.
-- [ ] `AppState`: external player as today; `embedded()` loads libmpv once;
+- [x] `AppState`: external player as today; `embedded()` loads libmpv once;
   `embed_failure` remembered for the run.
-- [ ] `playback::play`: Embedded → attach surface (after item and
+- [x] `playback::play`: Embedded → attach surface (after item and
   PlaybackInfo arrive) → `EmbeddedPlayer::play` → `shell::open_player`;
   any failure → notice once + external.
-- [ ] Event loop: forward events to the `PlayerView`; `Tracks` updates the
+- [x] Event loop: forward events to the `PlayerView`; `Tracks` updates the
   reported stream indices (`tracks::reported_indices`, tested); `Volume`
   saved at the end; `Ended` closes the player.
-- [ ] Settings page: "Playback" section with "Play inside Aurelia" and the
+- [x] Settings page: "Playback" section with "Play inside Aurelia" and the
   remembered failure reason; Keyboard section lists player keys.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 6: `PlayerView` and shell integration (app)
 
 **Files:** `crates/aurelia/src/views/player.rs` (new), `views/mod.rs`,
 `views/shell.rs`, `views/app.rs`, `theme.rs`, `main.rs`.
 
-- [ ] `PlayerView::new(info, control, surface: Option<Arc<VideoSurface>>)`;
+- [x] `PlayerView::new(info, control, surface: Option<Arc<VideoSurface>>)`;
   `on_event`; emits `PlayerViewEvent::Close`.
-- [ ] Layout: video canvas → `surface.place`; opaque black until ready, then
+- [x] Layout: video canvas → `surface.place`; opaque black until ready, then
   `theme::set_see_through(true)` (theme + `AppRoot` backgrounds
   transparent); top bar (Back, title, episode line), bottom bar (seek bar
   with played part, times, play/pause, ±10 s, mute + volume bar,
   audio/subtitle menus, fullscreen); spinner while loading/buffering.
-- [ ] Auto-hide after 3 s idle unless paused/loading; opacity spring.
-- [ ] `Player` key context: space/k, ←/→, ↑/↓, m, f, Esc (leave fullscreen,
+- [x] Auto-hide after 3 s idle unless paused/loading; opacity spring.
+- [x] `Player` key context: space/k, ←/→, ↑/↓, m, f, Esc (leave fullscreen,
   else close); double-click toggles fullscreen; Shell's Back closes.
-- [ ] Shell: `open_player`/`close_player`; renders only the player while
+- [x] Shell: `open_player`/`close_player`; renders only the player while
   open; `PlayCurrent` ignored; leaving fullscreen and see-through on close.
-- [ ] UI tests with a fake control: keys → controls, Esc and Back close,
+- [x] UI tests with a fake control: keys → controls, Esc and Back close,
   seek-bar click → `Seek`, controls hide after idle and stay while paused.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 7: Packaging, cleanup, docs
 
-- [ ] `flake.nix`: `mpv-unwrapped` in `runtimeLibs` (dev shell and wrapper).
-- [ ] Delete `crates/probe-embed`.
-- [ ] CLAUDE.md: player crate's embedded module, PlayerView, settings,
+- [x] `flake.nix`: `mpv-unwrapped` in `runtimeLibs` (dev shell and wrapper).
+- [x] Delete `crates/probe-embed`.
+- [x] CLAUDE.md: player crate's embedded module, PlayerView, settings,
   libmpv runtime, on-screen check notes (green `swaybg`, floating window).
-- [ ] fmt, clippy `-D warnings`, `cargo test --workspace`, ignored libmpv
+- [x] fmt, clippy `-D warnings`, `cargo test --workspace`, ignored libmpv
   tests; commit; push `v2`.
 
 ## Left for the user
