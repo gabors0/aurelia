@@ -5,10 +5,12 @@
 //! same [`Control`]s and report the same [`PlayerEvent`]s.
 
 mod control;
+mod embedded;
 mod mpv;
 mod tracks;
 mod types;
 
+pub use embedded::{EmbedError, EmbeddedPlayer, VideoSurface};
 pub use mpv::MpvPlayer;
 pub use tracks::{StreamInfo, TrackKind, mpv_track_id};
 pub use types::*;

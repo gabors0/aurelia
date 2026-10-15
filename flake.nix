@@ -17,11 +17,14 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        # Libraries GPUI loads at runtime (wgpu/Vulkan, Wayland, X11, fonts).
+        # Libraries loaded at runtime: GPUI's (wgpu/Vulkan, Wayland, X11,
+        # fonts), and libmpv + EGL for embedded playback (dlopen'ed, so
+        # Aurelia still starts without them).
         runtimeLibs = with pkgs; [
           vulkan-loader
           libGL
           wayland
+          mpv-unwrapped
           libxkbcommon
           libx11
           libxcb

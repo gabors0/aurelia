@@ -125,6 +125,8 @@ pub enum PlayerEvent {
 pub enum PlayerError {
     #[error("could not start the player ({binary}): {message}")]
     Spawn { binary: String, message: String },
+    #[error("could not start playback: {0}")]
+    Embedded(String),
 }
 
 /// A change to a running playback session.

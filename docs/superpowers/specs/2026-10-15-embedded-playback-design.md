@@ -125,11 +125,12 @@ How the probe attaches (keep this in the real code):
     - set before init and again after it, because Aurelia depends on them:
       `vo=libmpv`, `osd-level=0` (mpv's OSD is replaced by ours),
       `input-default-bindings=no`, `input-vo-keyboard=no`, `ytdl=no`,
-      `keep-open=no`, `idle=yes`, `terminal=no`;
-    - set before init only (scripts load during init): `load-scripts=no`,
-      `osc=no`, `load-stats-overlay=no`, `load-console=no`,
-      `load-select=no`, `load-positioning=no`, `load-commands=no`. If
-      mpv.conf turns these back on, log a warning;
+      `keep-open=no`, `idle=yes`, `terminal=no`, and the built-in scripts
+      `osc`, `load-stats-overlay`, `load-console`, `load-select`,
+      `load-positioning`, `load-commands`, `load-context-menu` = `no` (mpv
+      loads and unloads built-in scripts as these options change);
+    - set before init only: `load-scripts=no` (the user's own scripts load
+      during init). If mpv.conf turns it back on, log a warning;
     - **`load-auto-profiles` stays on**, so conditional profiles
       (`profile-cond`) in mpv.conf still apply.
     - `keep-open=no` (not `yes`): with `yes` mpv never sends `end-file` at

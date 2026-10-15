@@ -1,6 +1,6 @@
 [package]
 name = "player"
-description = "Media player abstraction with an mpv (JSON IPC) backend"
+description = "Media playback with mpv: a standalone window over JSON IPC, or embedded via libmpv"
 version.workspace = true
 edition.workspace = true
 
@@ -9,5 +9,13 @@ async-channel.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# Embedded playback: libmpv and libEGL are loaded at runtime.
+libloading = "0.8"
+khronos-egl = { version = "6", features = ["dynamic"] }
+raw-window-handle = "0.6"
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-egl = "0.32"
 
 [dev-dependencies]

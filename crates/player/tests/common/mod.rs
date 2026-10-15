@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Each test binary uses part of it.
+
 //! Checks shared by both backends' live tests.
 
 use std::path::PathBuf;

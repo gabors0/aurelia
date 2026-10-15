@@ -174,6 +174,11 @@ impl EventTranslator {
         }
     }
 
+    /// The session was stopped before mpv reported an ending.
+    pub fn on_stop(&mut self) {
+        self.end_reason.get_or_insert(EndReason::Quit);
+    }
+
     /// The player process is gone; produce the final event.
     pub fn on_exit(&mut self, exit_detail: Option<String>) -> PlayerEvent {
         let reason = match self.end_reason.take() {
@@ -432,6 +437,19 @@ mod tests {
                 json!({"event": "playback-restart"}),
             ],
         );
+        assert!(matches!(
+            t.on_exit(None),
+            PlayerEvent::Ended {
+                reason: EndReason::Quit,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn stopped_before_loading_is_quit() {
+        let mut t = EventTranslator::default();
+        t.on_stop();
         assert!(matches!(
             t.on_exit(None),
             PlayerEvent::Ended {

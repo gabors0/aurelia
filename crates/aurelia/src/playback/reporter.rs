@@ -96,6 +96,11 @@ impl Reporter {
                 self.last_progress = Some(now);
                 vec![self.report(ReportKind::Progress(Some(ProgressEvent::TimeUpdate)))]
             }
+            // What the player view shows, not what the server tracks.
+            PlayerEvent::Duration(_)
+            | PlayerEvent::Buffering(_)
+            | PlayerEvent::Volume(_)
+            | PlayerEvent::Tracks(_) => Vec::new(),
             PlayerEvent::Ended { position, reason } => {
                 self.stopped = true;
                 self.paused = false;
